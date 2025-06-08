@@ -321,7 +321,7 @@ int main() {
 	std::vector<Obj3D> scene;
 
 	// Carregamento dos objs
-	std::vector<std::string> objFiles = { "./barrels.obj" ,"./water.obj" };
+	std::vector<std::string> objFiles = { "./raceCarRed.obj", "./pista.obj"};
 	for (const std::string& path : objFiles) {
 		Mesh* m = new Mesh();
 		if (!loadOBJWithTriangulation(m, path)) continue;
