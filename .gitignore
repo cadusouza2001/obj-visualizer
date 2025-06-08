@@ -1,8 +1,17 @@
+# Visual Studio settings
 .vs/
 *.user
 *.suo
 *.VC.db
+
+# VSCode settings
 *.vscode/
 *.cache
+
+# Build folders
 bin/
 obj/
+
+# Debug output (gerado localmente)
+x64/Debug/
+OBJ_Visualizer/x64/Debug/
