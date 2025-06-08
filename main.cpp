@@ -10,7 +10,6 @@
 #include <sstream>
 #include <fstream>
 #include <limits>
-#define sscanf_s sscanf
 #include "Mesh.h"      // definicoes de estrutura de um OBJ
 #include "Group.h"
 #include "Face.h"
@@ -40,7 +39,7 @@ struct Obj3D {
 };
 
 // Estado da camera controlada pelo mouse e teclado
-static glm::vec3 camPos(0.0f, 0.0f, 5.0f); // posicao inicial
+static glm::vec3 camPos(524.0f, 0.0f, 212.0f); // posicao inicial
 static float yaw = -90.0f;                 // angulo Yaw (olhando para -Z)
 static float pitch = 0.0f;                 // angulo Pitch
 static bool rotating = false;              // se o botao esquerdo do mouse esta pressionado
@@ -345,12 +344,6 @@ int main() {
         std::string curveFile = "pontoscurva.txt";
         std::string trackFile = "pista.obj";
         std::string carFile = "raceCarRed.obj";
-        std::ifstream sceneCfg("scene.txt");
-        if (sceneCfg.is_open()) {
-                std::getline(sceneCfg, curveFile);
-                std::getline(sceneCfg, trackFile);
-                std::getline(sceneCfg, carFile);
-        }
 
         // Carrega pontos da curva da animacao
         std::vector<glm::vec3> curvePoints;
@@ -453,6 +446,8 @@ int main() {
 
 		glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0, 1, 0));
 		glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+
+		std::cout << "showCurve: " << (showCurve ? "true" : "false") << std::endl;
 
 		glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
