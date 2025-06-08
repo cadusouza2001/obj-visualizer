@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#define sscanf_s sscanf
 
 // Construtor vazio
 Mesh::Mesh() {}

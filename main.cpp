@@ -10,6 +10,7 @@
 #include <sstream>
 #include <fstream>
 #include <limits>
+#define sscanf_s sscanf
 #include "Mesh.h"      // definicoes de estrutura de um OBJ
 #include "Group.h"
 #include "Face.h"
@@ -228,6 +229,28 @@ static void loadMTL(const std::string& filename, std::map<std::string, MaterialI
 	}
 }
 
+// Le pontos de uma curva de animacao a partir de um arquivo de texto
+static bool loadCurve(const std::string& file, std::vector<glm::vec3>& pts) {
+        std::ifstream in(file);
+        if (!in.is_open()) { std::cerr << "Cannot open curve " << file << "\n"; return false; }
+        float x, y, z;
+        while (in >> x >> y >> z) pts.emplace_back(x, y, z);
+        return !pts.empty();
+}
+
+// Atualiza a transformacao do carro baseado na sequencia de pontos da curva
+static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts, size_t& idx) {
+        if (pts.size() < 2) return;
+        size_t next = (idx + 1) % pts.size();
+        glm::vec3 direction = glm::normalize(pts[next] - pts[idx]);
+        float angle = atan2(direction.z, direction.x);
+        // Rotacao calculada a partir do vetor direcao e aplicada antes da translacao
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), pts[idx]);
+        model = glm::rotate(model, angle, glm::vec3(0, 1, 0));
+        car.transform = model;
+        idx = next;
+}
+
 
 // Callback que detecta pressionamento do botao do mouse
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
@@ -315,27 +338,64 @@ int main() {
 		"FragColor = vec4(color,1.0);\n"
 		"}";
 
-	GLuint program = buildProgram(vsrc, fsrc);
-	glUseProgram(program);
+        GLuint program = buildProgram(vsrc, fsrc);
+        glUseProgram(program);
 
-	std::vector<Obj3D> scene;
+        // ---- Leitura do arquivo de cena com caminhos dos recursos ----
+        std::string curveFile = "pontoscurva.txt";
+        std::string trackFile = "pista.obj";
+        std::string carFile = "raceCarRed.obj";
+        std::ifstream sceneCfg("scene.txt");
+        if (sceneCfg.is_open()) {
+                std::getline(sceneCfg, curveFile);
+                std::getline(sceneCfg, trackFile);
+                std::getline(sceneCfg, carFile);
+        }
 
-	// Carregamento dos objs
-	std::vector<std::string> objFiles = { "./raceCarRed.obj", "./pista.obj"};
-	for (const std::string& path : objFiles) {
-		Mesh* m = new Mesh();
-		if (!loadOBJWithTriangulation(m, path)) continue;
-		triangulate(m); // garante que sejam triangulos
-		for (Group* g : m->groups) { // reconstroi depois da triangulacao
-			g->buildBuffers(m->vertex, m->normals, m->mappings);
-		}
-		Obj3D obj; obj.mesh = m; obj.transform = glm::mat4(1.0f);
-		if (!m->mtllib.empty()) {
-			std::map<std::string, MaterialInfo> mats; loadMTL(m->mtllib, mats); obj.materials = std::move(mats);
-		}
-		computeBoundingBox(m, obj.bbMin, obj.bbMax);
-		scene.push_back(obj);
-	}
+        // Carrega pontos da curva da animacao
+        std::vector<glm::vec3> curvePoints;
+        loadCurve(curveFile, curvePoints);
+
+        // VAO/VBO para opcionalmente desenhar a curva
+        GLuint curveVAO = 0, curveVBO = 0;
+        if (!curvePoints.empty()) {
+                glGenVertexArrays(1, &curveVAO);
+                glGenBuffers(1, &curveVBO);
+                glBindVertexArray(curveVAO);
+                glBindBuffer(GL_ARRAY_BUFFER, curveVBO);
+                glBufferData(GL_ARRAY_BUFFER, curvePoints.size() * sizeof(glm::vec3), curvePoints.data(), GL_STATIC_DRAW);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+                glVertexAttrib3f(1, 0.0f, 1.0f, 0.0f); // normal constante
+                glVertexAttrib2f(2, 0.0f, 0.0f);       // texcoord nulo
+                glBindVertexArray(0);
+        }
+
+        std::vector<Obj3D> scene;
+
+        // ---- Carregamento dos modelos da pista e do carro ----
+        std::vector<std::string> objFiles = { trackFile, carFile };
+        for (const std::string& path : objFiles) {
+                Mesh* m = new Mesh();
+                if (!loadOBJWithTriangulation(m, path)) continue;
+                triangulate(m); // garante que sejam triangulos
+                for (Group* g : m->groups) {
+                        g->buildBuffers(m->vertex, m->normals, m->mappings);
+                }
+                Obj3D obj; obj.mesh = m; obj.transform = glm::mat4(1.0f);
+                if (!m->mtllib.empty()) {
+                        std::map<std::string, MaterialInfo> mats; loadMTL(m->mtllib, mats); obj.materials = std::move(mats);
+                }
+                computeBoundingBox(m, obj.bbMin, obj.bbMax);
+                scene.push_back(obj);
+        }
+
+        // indices para acesso rapido
+        size_t trackIndex = 0;
+        size_t carIndex = scene.size() > 1 ? 1 : 0;
+        size_t pathIndex = 0;           // ponto atual da curva
+        bool showCurve = false;
+        bool fPressed = false;
 
 	GLint modelLoc = glGetUniformLocation(program, "model");
 	GLint viewLoc = glGetUniformLocation(program, "view");
@@ -356,12 +416,12 @@ int main() {
 	glUniform1f(fogDensityLoc, 0.05f);
 	glUniform1i(matDiffuseLoc, 0);
 
-	// posicao da camera e orientacao sao definidas globalmente
-	float lastTime = (float)glfwGetTime();
+        // posicao da camera e orientacao sao definidas globalmente
+        float lastTime = (float)glfwGetTime();
 
-	while (!glfwWindowShouldClose(win)) {
-		float time = (float)glfwGetTime();
-		float dt = time - lastTime; lastTime = time;
+        while (!glfwWindowShouldClose(win)) {
+                float time = (float)glfwGetTime();
+                float dt = time - lastTime; lastTime = time;
 
 		glm::vec3 front;
 		front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
@@ -379,7 +439,17 @@ int main() {
 			camPos -= right * dt * 5.0f;
 		if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS)
 			camPos += right * dt * 5.0f;
-		if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(win, 1);
+                if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(win, 1);
+
+                // tecla F alterna a visualizacao da curva de debug
+                if (glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS && !fPressed) { showCurve = !showCurve; fPressed = true; }
+                if (glfwGetKey(win, GLFW_KEY_F) == GLFW_RELEASE) fPressed = false;
+                // tecla R reinicia a animacao do carro
+                if (glfwGetKey(win, GLFW_KEY_R) == GLFW_PRESS) pathIndex = 0;
+
+                // Atualiza a transformacao do carro a cada frame
+                if (carIndex < scene.size())
+                        animateCarOnCurve(scene[carIndex], curvePoints, pathIndex);
 
 		glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0, 1, 0));
 		glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
@@ -391,22 +461,34 @@ int main() {
 		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
 		glUniform3fv(viewPosLoc, 1, glm::value_ptr(camPos));
 
-		for (const Obj3D& obj : scene) {
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.transform));
-			for (Group* g : obj.mesh->groups) {
-				auto it = obj.materials.find(g->material);
-				MaterialInfo mat;
-				if (it != obj.materials.end()) mat = it->second;
-				glUniform3fv(matAmbientLoc, 1, glm::value_ptr(mat.Ka));
-				glUniform3fv(matSpecularLoc, 1, glm::value_ptr(mat.Ks));
-				glUniform1f(matShineLoc, mat.Ns);
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, mat.texture);
-				glBindVertexArray(g->vao);
-				glDrawArrays(GL_TRIANGLES, 0, g->numVertices);
-			}
-		}
-		glBindVertexArray(0);
+                for (const Obj3D& obj : scene) {
+                        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.transform));
+                        for (Group* g : obj.mesh->groups) {
+                                auto it = obj.materials.find(g->material);
+                                MaterialInfo mat;
+                                if (it != obj.materials.end()) mat = it->second;
+                                glUniform3fv(matAmbientLoc, 1, glm::value_ptr(mat.Ka));
+                                glUniform3fv(matSpecularLoc, 1, glm::value_ptr(mat.Ks));
+                                glUniform1f(matShineLoc, mat.Ns);
+                                glActiveTexture(GL_TEXTURE0);
+                                glBindTexture(GL_TEXTURE_2D, mat.texture);
+                                glBindVertexArray(g->vao);
+                                glDrawArrays(GL_TRIANGLES, 0, g->numVertices);
+                        }
+                }
+                // Desenha a linha da curva para depuracao se habilitado
+                if (showCurve && curveVAO) {
+                        MaterialInfo dbg; dbg.Ka = glm::vec3(1.0f, 0.0f, 0.0f); dbg.Ks = glm::vec3(0.0f); dbg.Ns = 1.0f; dbg.texture = 0;
+                        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+                        glUniform3fv(matAmbientLoc, 1, glm::value_ptr(dbg.Ka));
+                        glUniform3fv(matSpecularLoc, 1, glm::value_ptr(dbg.Ks));
+                        glUniform1f(matShineLoc, dbg.Ns);
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                        glBindVertexArray(curveVAO);
+                        glDrawArrays(GL_LINE_STRIP, 0, (GLsizei)curvePoints.size());
+                }
+                glBindVertexArray(0);
 
 		glfwSwapBuffers(win);
 		glfwPollEvents();
