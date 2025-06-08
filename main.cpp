@@ -44,6 +44,10 @@ static float yaw = -90.0f;                 // angulo Yaw (olhando para -Z)
 static float pitch = 0.0f;                 // angulo Pitch
 static bool rotating = false;              // se o botao esquerdo do mouse esta pressionado
 static double lastX = 0.0, lastY = 0.0;    // ultima posicao do mouse
+static bool freeCamera = false;            // false: camera segue o carro
+static bool oPressed = false;              // controle da tecla O
+static const float chaseDistance = 5.0f;   // dist. da camera atras do carro
+static const float chaseHeight = 2.0f;     // altura da camera em relacao ao carro
 
 // Carrega uma textura 2D e gera mipmaps
 // Uso do sampler2D no fragment shader (texturizacao)
@@ -169,8 +173,8 @@ static bool loadOBJWithTriangulation(Mesh* mesh, const std::string& file) {
 		else if (pref == "f") {
 			std::vector<int> vs, ts, ns; std::string tok;
 			while (iss >> tok) {
-				int vi = -1, ti = -1, ni = -1;
-				sscanf_s(tok.c_str(), "%d/%d/%d", &vi, &ti, &ni);
+                                int vi = -1, ti = -1, ni = -1;
+                                sscanf(tok.c_str(), "%d/%d/%d", &vi, &ti, &ni);
 				vs.push_back(vi - 1); ts.push_back(ti - 1); ns.push_back(ni - 1);
 			}
 			if (vs.size() <= 3) {
@@ -253,22 +257,22 @@ static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts, siz
 
 // Callback que detecta pressionamento do botao do mouse
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-	if (button == GLFW_MOUSE_BUTTON_LEFT) {
-		if (action == GLFW_PRESS) {
-			rotating = true;
-			glfwGetCursorPos(window, &lastX, &lastY);
-		}
-		else if (action == GLFW_RELEASE) {
-			rotating = false;
-		}
-	}
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+                if (action == GLFW_PRESS && freeCamera) {
+                        rotating = true;
+                        glfwGetCursorPos(window, &lastX, &lastY);
+                }
+                else if (action == GLFW_RELEASE) {
+                        rotating = false;
+                }
+        }
 }
 
 // Callback que atualiza angulos da camera enquanto o mouse move
 static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
-	if (!rotating) return;
-	float sensitivity = 0.1f;
-	float dx = static_cast<float>(xpos - lastX);
+        if (!rotating || !freeCamera) return;
+        float sensitivity = 0.1f;
+        float dx = static_cast<float>(xpos - lastX);
 	float dy = static_cast<float>(ypos - lastY);
 	lastX = xpos;
 	lastY = ypos;
@@ -416,23 +420,14 @@ int main() {
                 float time = (float)glfwGetTime();
                 float dt = time - lastTime; lastTime = time;
 
-		glm::vec3 front;
-		front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-		front.y = sin(glm::radians(pitch));
-		front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-		front = glm::normalize(front);
+                bool oDown = glfwGetKey(win, GLFW_KEY_O) == GLFW_PRESS;
+                if (oDown && !oPressed) {
+                        freeCamera = !freeCamera;
+                        oPressed = true;
+                        rotating = false;
+                }
+                if (!oDown) oPressed = false;
 
-		glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
-
-		if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS)
-			camPos += front * dt * 5.0f;
-		if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS)
-			camPos -= front * dt * 5.0f;
-		if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS)
-			camPos -= right * dt * 5.0f;
-		if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS)
-			camPos += right * dt * 5.0f;
-                if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(win, 1);
 
                 // tecla F alterna a visualizacao da curva de debug
                 if (glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS && !fPressed) { showCurve = !showCurve; fPressed = true; }
@@ -443,6 +438,35 @@ int main() {
                 // Atualiza a transformacao do carro a cada frame
                 if (carIndex < scene.size())
                         animateCarOnCurve(scene[carIndex], curvePoints, pathIndex);
+
+                glm::vec3 front;
+                if (freeCamera) {
+                        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+                        front.y = sin(glm::radians(pitch));
+                        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+                        front = glm::normalize(front);
+                } else {
+                        glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
+                        glm::vec3 carDir = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(1, 0, 0, 0)));
+                        camPos = carPos - carDir * chaseDistance + glm::vec3(0, chaseHeight, 0);
+                        front = glm::normalize(carPos - camPos);
+                        yaw = glm::degrees(atan2(front.z, front.x));
+                        pitch = glm::degrees(asin(front.y));
+                }
+
+                glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
+
+                if (freeCamera) {
+                        if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS)
+                                camPos += front * dt * 5.0f;
+                        if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS)
+                                camPos -= front * dt * 5.0f;
+                        if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS)
+                                camPos -= right * dt * 5.0f;
+                        if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS)
+                                camPos += right * dt * 5.0f;
+                }
+                if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(win, 1);
 
 		glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0, 1, 0));
 		glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
