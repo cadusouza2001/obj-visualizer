@@ -50,7 +50,7 @@ bool Mesh::loadOBJ(const std::string& filename) {
             std::string token;
             while (iss >> token) {
                 int vIdx = -1, tIdx = -1, nIdx = -1;
-                sscanf(token.c_str(), "%d/%d/%d", &vIdx, &tIdx, &nIdx);
+                sscanf_s(token.c_str(), "%d/%d/%d", &vIdx, &tIdx, &nIdx);
                 face->add(vIdx - 1, tIdx - 1, nIdx - 1);
             }
             currentGroup->addFace(face);

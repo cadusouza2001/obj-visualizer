@@ -174,7 +174,7 @@ static bool loadOBJWithTriangulation(Mesh* mesh, const std::string& file) {
 			std::vector<int> vs, ts, ns; std::string tok;
 			while (iss >> tok) {
                                 int vi = -1, ti = -1, ni = -1;
-                                sscanf(tok.c_str(), "%d/%d/%d", &vi, &ti, &ni);
+                                sscanf_s(tok.c_str(), "%d/%d/%d", &vi, &ti, &ni);
 				vs.push_back(vi - 1); ts.push_back(ti - 1); ns.push_back(ni - 1);
 			}
 			if (vs.size() <= 3) {
@@ -242,16 +242,33 @@ static bool loadCurve(const std::string& file, std::vector<glm::vec3>& pts) {
 }
 
 // Atualiza a transformacao do carro baseado na sequencia de pontos da curva
-static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts, size_t& idx) {
+// move o carro ao longo da curva em uma velocidade constante controlada por dt
+static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts,
+                              size_t& idx, float dt) {
         if (pts.size() < 2) return;
+
+        // Progresso suave ao longo da curva
+        static float segT = 0.0f;
+        const float speed = 5.0f; // controla a velocidade do carro
+        segT += dt * speed;
+        while (segT >= 1.0f) {
+                segT -= 1.0f;
+                idx = (idx + 1) % pts.size();
+        }
+
         size_t next = (idx + 1) % pts.size();
-        glm::vec3 direction = glm::normalize(pts[next] - pts[idx]);
-        float angle = atan2(direction.z, direction.x);
-        // Rotacao calculada a partir do vetor direcao e aplicada antes da translacao
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), pts[idx]);
-        model = glm::rotate(model, angle, glm::vec3(0, 1, 0));
+        glm::vec3 pos = glm::mix(pts[idx], pts[next], segT);
+
+        // Mantem o carro sempre apontando para a mesma direcao
+        static float baseAngle = NAN;
+        if (std::isnan(baseAngle)) {
+                glm::vec3 dir0 = glm::normalize(pts[1] - pts[0]);
+                baseAngle = atan2(dir0.z, dir0.x);
+        }
+
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
+        model = glm::rotate(model, baseAngle, glm::vec3(0, 1, 0));
         car.transform = model;
-        idx = next;
 }
 
 
@@ -311,35 +328,41 @@ int main() {
 		"gl_Position = projection*view*vec4(FragPos,1.0);\n"
 		"}";
 
-	const char* fsrc = "#version 330 core\n"
-		"struct Material{ sampler2D diffuse; vec3 ambient; vec3 specular; float shininess; };\n"
-		"in vec3 FragPos;\n"
-		"in vec3 Normal;\n"
-		"in vec2 TexCoord;\n"
-		"out vec4 FragColor;\n"
-		"uniform Material material;\n"
-		"uniform vec3 lightPos;\n"
-		"uniform vec3 lightColor;\n"
-		"uniform vec3 viewPos;\n"
-		"uniform vec3 fogColor;\n"
-		"uniform float fogDensity;\n"
-		"void main(){\n"
-		"vec3 ambient = material.ambient * texture(material.diffuse, TexCoord).rgb;\n"
-		"vec3 norm = normalize(Normal);\n"
-		"vec3 lightDir = normalize(lightPos - FragPos);\n"
-		"float diff = max(dot(norm, lightDir),0.0);\n"
-		"vec3 diffuse = diff * texture(material.diffuse, TexCoord).rgb;\n"
-		"vec3 viewDir = normalize(viewPos - FragPos);\n"
-		"vec3 reflectDir = reflect(-lightDir,norm);\n"
-		"float spec = pow(max(dot(viewDir, reflectDir),0.0), material.shininess);\n"
-		"vec3 specular = material.specular * spec;\n"
-		"vec3 color = (ambient + diffuse + specular)*lightColor;\n"
-		"float dist = length(viewPos - FragPos);\n"
-		"float fogFactor = exp(-fogDensity*dist);\n"
-		"fogFactor = clamp(fogFactor,0.0,1.0);\n"
-		"color = mix(fogColor, color, fogFactor);\n"
-		"FragColor = vec4(color,1.0);\n"
-		"}";
+        const char* fsrc = "#version 330 core\n"
+                "struct Material{ sampler2D diffuse; vec3 ambient; vec3 specular; float shininess; };\n"
+                "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
+                "in vec3 FragPos;\n"
+                "in vec3 Normal;\n"
+                "in vec2 TexCoord;\n"
+                "out vec4 FragColor;\n"
+                "uniform Material material;\n"
+                "uniform Light lights[3];\n"
+                "uniform vec3 viewPos;\n"
+                "uniform vec3 fogColor;\n"
+                "uniform float fogDensity;\n"
+                "void main(){\n"
+                "vec3 norm = normalize(Normal);\n"
+                "vec3 viewDir = normalize(viewPos - FragPos);\n"
+                "vec3 texCol = texture(material.diffuse, TexCoord).rgb;\n"
+                "vec3 result = vec3(0.0);\n"
+                "for(int i=0;i<3;++i){\n"
+                "  vec3 ambient = material.ambient * texCol;\n"
+                "  vec3 lightDir = normalize(lights[i].position - FragPos);\n"
+                "  float diff = max(dot(norm, lightDir), 0.0);\n"
+                "  vec3 diffuse = diff * texCol;\n"
+                "  vec3 reflectDir = reflect(-lightDir, norm);\n"
+                "  float spec = pow(max(dot(viewDir, reflectDir),0.0), material.shininess);\n"
+                "  vec3 specular = material.specular * spec;\n"
+                "  float d = length(lights[i].position - FragPos);\n"
+                "  float att = 1.0 / (lights[i].constant + lights[i].linear*d + lights[i].quadratic*d*d);\n"
+                "  result += (ambient + diffuse + specular) * lights[i].color * att;\n"
+                "}\n"
+                "float dist = length(viewPos - FragPos);\n"
+                "float fogFactor = exp(-fogDensity*dist);\n"
+                "fogFactor = clamp(fogFactor,0.0,1.0);\n"
+                "result = mix(fogColor, result, fogFactor);\n"
+                "FragColor = vec4(result, 1.0);\n"
+                "}";
 
         GLuint program = buildProgram(vsrc, fsrc);
         glUseProgram(program);
@@ -352,6 +375,13 @@ int main() {
         // Carrega pontos da curva da animacao
         std::vector<glm::vec3> curvePoints;
         loadCurve(curveFile, curvePoints);
+
+        glm::vec3 lightPositions[3] = { glm::vec3(0.0f) };
+        if(!curvePoints.empty()){
+                lightPositions[0] = curvePoints[0] + glm::vec3(0,5,0);
+                lightPositions[1] = curvePoints[curvePoints.size()/2] + glm::vec3(0,5,0);
+                lightPositions[2] = curvePoints.back() + glm::vec3(0,5,0);
+        }
 
         // VAO/VBO para opcionalmente desenhar a curva
         GLuint curveVAO = 0, curveVBO = 0;
@@ -397,9 +427,20 @@ int main() {
 	GLint modelLoc = glGetUniformLocation(program, "model");
 	GLint viewLoc = glGetUniformLocation(program, "view");
 	GLint projLoc = glGetUniformLocation(program, "projection");
-	GLint lightPosLoc = glGetUniformLocation(program, "lightPos");
-	GLint lightColorLoc = glGetUniformLocation(program, "lightColor");
-	GLint viewPosLoc = glGetUniformLocation(program, "viewPos");
+        GLint lightPosLoc[3];
+        GLint lightColorLoc[3];
+        GLint lightConstLoc[3];
+        GLint lightLinLoc[3];
+        GLint lightQuadLoc[3];
+        for(int i=0;i<3;++i){
+                std::string base = "lights[" + std::to_string(i) + "]";
+                lightPosLoc[i] = glGetUniformLocation(program, (base+".position").c_str());
+                lightColorLoc[i] = glGetUniformLocation(program, (base+".color").c_str());
+                lightConstLoc[i] = glGetUniformLocation(program, (base+".constant").c_str());
+                lightLinLoc[i] = glGetUniformLocation(program, (base+".linear").c_str());
+                lightQuadLoc[i] = glGetUniformLocation(program, (base+".quadratic").c_str());
+        }
+        GLint viewPosLoc = glGetUniformLocation(program, "viewPos");
 	GLint fogColorLoc = glGetUniformLocation(program, "fogColor");
 	GLint fogDensityLoc = glGetUniformLocation(program, "fogDensity");
 	GLint matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
@@ -407,11 +448,16 @@ int main() {
 	GLint matSpecularLoc = glGetUniformLocation(program, "material.specular");
 	GLint matShineLoc = glGetUniformLocation(program, "material.shininess");
 
-	glUniform3f(lightPosLoc, 2.0f, 4.0f, 2.0f);
-	glUniform3f(lightColorLoc, 1.0f, 1.0f, 1.0f);
-	glUniform3f(fogColorLoc, 0.5f, 0.6f, 0.7f);
-	glUniform1f(fogDensityLoc, 0.05f);
-	glUniform1i(matDiffuseLoc, 0);
+        for(int i=0;i<3;++i){
+                glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
+                glUniform3f(lightColorLoc[i], 1.0f, 1.0f, 1.0f);
+                glUniform1f(lightConstLoc[i], 1.0f);
+                glUniform1f(lightLinLoc[i], 0.09f);
+                glUniform1f(lightQuadLoc[i], 0.032f);
+        }
+        glUniform3f(fogColorLoc, 0.5f, 0.6f, 0.7f);
+        glUniform1f(fogDensityLoc, 0.05f);
+        glUniform1i(matDiffuseLoc, 0);
 
         // posicao da camera e orientacao sao definidas globalmente
         float lastTime = (float)glfwGetTime();
@@ -435,9 +481,9 @@ int main() {
                 // tecla R reinicia a animacao do carro
                 if (glfwGetKey(win, GLFW_KEY_R) == GLFW_PRESS) pathIndex = 0;
 
-                // Atualiza a transformacao do carro a cada frame
+                // Atualiza a transformacao do carro a cada frame com velocidade reduzida
                 if (carIndex < scene.size())
-                        animateCarOnCurve(scene[carIndex], curvePoints, pathIndex);
+                        animateCarOnCurve(scene[carIndex], curvePoints, pathIndex, dt);
 
                 glm::vec3 front;
                 if (freeCamera) {
@@ -471,7 +517,6 @@ int main() {
 		glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0, 1, 0));
 		glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 
-		std::cout << "showCurve: " << (showCurve ? "true" : "false") << std::endl;
 
 		glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
