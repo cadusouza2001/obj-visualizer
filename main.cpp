@@ -48,7 +48,7 @@ static bool freeCamera = false;            // false: camera segue o carro
 static bool oPressed = false;              // controle da tecla O
 static const float chaseDistance = 5.0f;   // dist. da camera atras do carro
 static const float chaseHeight = 2.0f;     // altura da camera em relacao ao carro
-static float carAngleOffset = -90.0f;        // offset angular aplicado ao carro (radianos)
+static float carAngleOffset = glm::radians(-90.0f); // offset angular aplicado ao carro (radianos)
 static bool followInit = true;             // controla orientacao inicial da camera de perseguicao
 
 // Carrega uma textura 2D e gera mipmaps
@@ -251,7 +251,7 @@ static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts,
 
         // Progresso suave ao longo da curva
         static float segT = 0.0f;
-        const float speed = 5.0f; // controla a velocidade do carro
+        const float speed = 15.0f; // controla a velocidade do carro
         segT += dt * speed;
         while (segT >= 1.0f) {
                 segT -= 1.0f;
@@ -290,8 +290,8 @@ static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
         float sensitivity = 0.1f;
         float dx = static_cast<float>(xpos - lastX);
         float dy = static_cast<float>(ypos - lastY);
-	lastX = xpos;
-	lastY = ypos;
+        lastX = xpos;
+        lastY = ypos;
 	yaw += dx * sensitivity;
 	pitch -= dy * sensitivity;
 	if (pitch > 89.0f) pitch = 89.0f;
@@ -487,10 +487,10 @@ int main() {
                         animateCarOnCurve(scene[carIndex], curvePoints, pathIndex, dt);
 
                 glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
-                glm::vec3 carDir = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(1, 0, 0, 0)));
+                glm::vec3 carFront = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(0, 0, -1, 0)));
 
                 if (!freeCamera) {
-                        camPos = carPos - carDir * chaseDistance + glm::vec3(0, chaseHeight, 0);
+                        camPos = carPos - carFront * chaseDistance + glm::vec3(0, chaseHeight, 0);
                         if (cameraSwitched || followInit) {
                                 glm::vec3 tmpFront = glm::normalize(carPos - camPos);
                                 yaw = glm::degrees(atan2(tmpFront.z, tmpFront.x));
