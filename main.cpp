@@ -49,7 +49,8 @@ static bool oPressed = false;              // controle da tecla O
 static const float chaseDistance = 5.0f;   // dist. da camera atras do carro
 static const float chaseHeight = 2.0f;     // altura da camera em relacao ao carro
 static float carAngleOffset = glm::radians(-90.0f); // offset angular aplicado ao carro (radianos)
-static bool followInit = true;             // controla orientacao inicial da camera de perseguicao
+static float orbitYaw = 0.0f;              // angulo horizontal ao orbitar o carro
+static float orbitPitch = 0.0f;            // angulo vertical ao orbitar o carro
 
 // Carrega uma textura 2D e gera mipmaps
 // Uso do sampler2D no fragment shader (texturizacao)
@@ -273,7 +274,7 @@ static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts,
 
 // Callback que detecta pressionamento do botao do mouse
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && freeCamera) {
                 if (action == GLFW_PRESS) {
                         rotating = true;
                         glfwGetCursorPos(window, &lastX, &lastY);
@@ -286,7 +287,7 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
 
 // Callback que atualiza angulos da camera enquanto o mouse move
 static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
-        if (!rotating) return;
+        if (!rotating || !freeCamera) return;
         float sensitivity = 0.1f;
         float dx = static_cast<float>(xpos - lastX);
         float dy = static_cast<float>(ypos - lastY);
@@ -474,6 +475,11 @@ int main() {
                         cameraSwitched = true;
                 }
                 if (!oDown) oPressed = false;
+                if (!freeCamera && cameraSwitched) {
+                        orbitYaw = 0.0f;
+                        orbitPitch = 0.0f;
+                        cameraSwitched = false;
+                }
 
 
                 // tecla F alterna a visualizacao da curva de debug
@@ -490,21 +496,38 @@ int main() {
                 glm::vec3 carFront = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(0, 0, -1, 0)));
 
                 if (!freeCamera) {
-                        camPos = carPos - carFront * chaseDistance + glm::vec3(0, chaseHeight, 0);
-                        if (cameraSwitched || followInit) {
-                                glm::vec3 tmpFront = glm::normalize(carPos - camPos);
-                                yaw = glm::degrees(atan2(tmpFront.z, tmpFront.x));
-                                pitch = glm::degrees(asin(tmpFront.y));
-                                followInit = false;
-                                cameraSwitched = false;
-                        }
+                        const float orbitSpeed = 90.0f;
+                        if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS)
+                                orbitPitch += orbitSpeed * dt;
+                        if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS)
+                                orbitPitch -= orbitSpeed * dt;
+                        if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS)
+                                orbitYaw += orbitSpeed * dt;
+                        if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS)
+                                orbitYaw -= orbitSpeed * dt;
+                        orbitPitch = glm::clamp(orbitPitch, -89.0f, 89.0f);
+
+                        glm::vec3 baseDir = -carFront;
+                        glm::mat4 rotYaw = glm::rotate(glm::mat4(1.0f), glm::radians(orbitYaw), glm::vec3(0,1,0));
+                        glm::vec3 dir = glm::vec3(rotYaw * glm::vec4(baseDir, 0.0f));
+                        glm::vec3 rightAxis = glm::normalize(glm::cross(dir, glm::vec3(0,1,0)));
+                        glm::mat4 rotPitch = glm::rotate(glm::mat4(1.0f), glm::radians(orbitPitch), rightAxis);
+                        dir = glm::normalize(glm::vec3(rotPitch * glm::vec4(dir, 0.0f)));
+
+                        camPos = carPos + dir * chaseDistance + glm::vec3(0, chaseHeight, 0);
                 }
 
                 glm::vec3 front;
-                front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-                front.y = sin(glm::radians(pitch));
-                front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-                front = glm::normalize(front);
+                if (freeCamera) {
+                        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+                        front.y = sin(glm::radians(pitch));
+                        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+                        front = glm::normalize(front);
+                } else {
+                        front = glm::normalize(carPos - camPos);
+                        yaw = glm::degrees(atan2(front.z, front.x));
+                        pitch = glm::degrees(asin(front.y));
+                }
 
                 glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
 
