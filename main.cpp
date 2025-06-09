@@ -48,6 +48,8 @@ static bool freeCamera = false;            // false: camera segue o carro
 static bool oPressed = false;              // controle da tecla O
 static const float chaseDistance = 5.0f;   // dist. da camera atras do carro
 static const float chaseHeight = 2.0f;     // altura da camera em relacao ao carro
+static float carAngleOffset = -90.0f;        // offset angular aplicado ao carro (radianos)
+static bool followInit = true;             // controla orientacao inicial da camera de perseguicao
 
 // Carrega uma textura 2D e gera mipmaps
 // Uso do sampler2D no fragment shader (texturizacao)
@@ -259,15 +261,12 @@ static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts,
         size_t next = (idx + 1) % pts.size();
         glm::vec3 pos = glm::mix(pts[idx], pts[next], segT);
 
-        // Mantem o carro sempre apontando para a mesma direcao
-        static float baseAngle = NAN;
-        if (std::isnan(baseAngle)) {
-                glm::vec3 dir0 = glm::normalize(pts[1] - pts[0]);
-                baseAngle = atan2(dir0.z, dir0.x);
-        }
+        // Orientacao seguindo a direcao do segmento atual com offset
+        glm::vec3 dir = glm::normalize(pts[next] - pts[idx]);
+        float pathAngle = atan2(dir.z, dir.x);
 
         glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
-        model = glm::rotate(model, baseAngle, glm::vec3(0, 1, 0));
+        model = glm::rotate(model, - pathAngle + carAngleOffset, glm::vec3(0, 1, 0));
         car.transform = model;
 }
 
@@ -275,7 +274,7 @@ static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts,
 // Callback que detecta pressionamento do botao do mouse
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
-                if (action == GLFW_PRESS && freeCamera) {
+                if (action == GLFW_PRESS) {
                         rotating = true;
                         glfwGetCursorPos(window, &lastX, &lastY);
                 }
@@ -287,10 +286,10 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
 
 // Callback que atualiza angulos da camera enquanto o mouse move
 static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
-        if (!rotating || !freeCamera) return;
+        if (!rotating) return;
         float sensitivity = 0.1f;
         float dx = static_cast<float>(xpos - lastX);
-	float dy = static_cast<float>(ypos - lastY);
+        float dy = static_cast<float>(ypos - lastY);
 	lastX = xpos;
 	lastY = ypos;
 	yaw += dx * sensitivity;
@@ -467,10 +466,12 @@ int main() {
                 float dt = time - lastTime; lastTime = time;
 
                 bool oDown = glfwGetKey(win, GLFW_KEY_O) == GLFW_PRESS;
+                static bool cameraSwitched = false;
                 if (oDown && !oPressed) {
                         freeCamera = !freeCamera;
                         oPressed = true;
                         rotating = false;
+                        cameraSwitched = true;
                 }
                 if (!oDown) oPressed = false;
 
@@ -485,20 +486,25 @@ int main() {
                 if (carIndex < scene.size())
                         animateCarOnCurve(scene[carIndex], curvePoints, pathIndex, dt);
 
-                glm::vec3 front;
-                if (freeCamera) {
-                        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-                        front.y = sin(glm::radians(pitch));
-                        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-                        front = glm::normalize(front);
-                } else {
-                        glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
-                        glm::vec3 carDir = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(1, 0, 0, 0)));
+                glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
+                glm::vec3 carDir = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(1, 0, 0, 0)));
+
+                if (!freeCamera) {
                         camPos = carPos - carDir * chaseDistance + glm::vec3(0, chaseHeight, 0);
-                        front = glm::normalize(carPos - camPos);
-                        yaw = glm::degrees(atan2(front.z, front.x));
-                        pitch = glm::degrees(asin(front.y));
+                        if (cameraSwitched || followInit) {
+                                glm::vec3 tmpFront = glm::normalize(carPos - camPos);
+                                yaw = glm::degrees(atan2(tmpFront.z, tmpFront.x));
+                                pitch = glm::degrees(asin(tmpFront.y));
+                                followInit = false;
+                                cameraSwitched = false;
+                        }
                 }
+
+                glm::vec3 front;
+                front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+                front.y = sin(glm::radians(pitch));
+                front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+                front = glm::normalize(front);
 
                 glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
 
