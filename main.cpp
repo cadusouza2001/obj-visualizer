@@ -697,10 +697,11 @@ static glm::vec3 updateCamera(GLFWwindow* win, const glm::vec3& carPos, const gl
         front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
         front = glm::normalize(front);
         glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0,1,0)));
-        if(glfwGetKey(win,GLFW_KEY_W)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_UP)==GLFW_PRESS) camPos += front * dt * 5.0f;
-        if(glfwGetKey(win,GLFW_KEY_S)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_DOWN)==GLFW_PRESS) camPos -= front * dt * 5.0f;
-        if(glfwGetKey(win,GLFW_KEY_A)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_LEFT)==GLFW_PRESS) camPos -= right * dt * 5.0f;
-        if(glfwGetKey(win,GLFW_KEY_D)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_RIGHT)==GLFW_PRESS) camPos += right * dt * 5.0f;
+        float cameraSpeed = 15.0f;
+        if(glfwGetKey(win,GLFW_KEY_W)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_UP)==GLFW_PRESS) camPos += front * dt * cameraSpeed;
+        if(glfwGetKey(win,GLFW_KEY_S)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_DOWN)==GLFW_PRESS) camPos -= front * dt * cameraSpeed;
+        if(glfwGetKey(win,GLFW_KEY_A)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_LEFT)==GLFW_PRESS) camPos -= right * dt * cameraSpeed;
+        if(glfwGetKey(win,GLFW_KEY_D)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_RIGHT)==GLFW_PRESS) camPos += right * dt * cameraSpeed;
     }
     return front;
 }
@@ -802,7 +803,7 @@ static void run(GLFWwindow* win, GLuint program, std::vector<Obj3D>& scene,
         if(glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(win,1);
         glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0,1,0));
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), 800.0f/600.0f, 0.1f, 100.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), 800.0f/600.0f, 0.1f, 1000.0f);
 
         glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
