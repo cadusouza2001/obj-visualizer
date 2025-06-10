@@ -333,7 +333,7 @@ int main() {
 		"}";
 
         const char* fsrc = "#version 330 core\n"
-                "struct Material{ sampler2D diffuse; vec3 ambient; vec3 specular; float shininess; };\n"
+                "struct Material{ sampler2D diffuse; vec3 ambient; vec3 diffuseColor; vec3 specular; float shininess; int useTexture; };\n"
                 "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
                 "in vec3 FragPos;\n"
                 "in vec3 Normal;\n"
@@ -347,13 +347,14 @@ int main() {
                 "void main(){\n"
                 "vec3 norm = normalize(Normal);\n"
                 "vec3 viewDir = normalize(viewPos - FragPos);\n"
-                "vec3 texCol = texture(material.diffuse, TexCoord).rgb;\n"
+                "vec3 texCol = material.useTexture == 1 ? texture(material.diffuse, TexCoord).rgb : vec3(1.0);\n"
+                "vec3 baseColor = material.diffuseColor * texCol;\n"
                 "vec3 result = vec3(0.0);\n"
                 "for(int i=0;i<3;++i){\n"
-                "  vec3 ambient = material.ambient * texCol;\n"
+                "  vec3 ambient = material.ambient * baseColor;\n"
                 "  vec3 lightDir = normalize(lights[i].position - FragPos);\n"
                 "  float diff = max(dot(norm, lightDir), 0.0);\n"
-                "  vec3 diffuse = diff * texCol;\n"
+                "  vec3 diffuse = diff * baseColor;\n"
                 "  vec3 reflectDir = reflect(-lightDir, norm);\n"
                 "  float spec = pow(max(dot(viewDir, reflectDir),0.0), material.shininess);\n"
                 "  vec3 specular = material.specular * spec;\n"
@@ -447,10 +448,12 @@ int main() {
         GLint viewPosLoc = glGetUniformLocation(program, "viewPos");
 	GLint fogColorLoc = glGetUniformLocation(program, "fogColor");
 	GLint fogDensityLoc = glGetUniformLocation(program, "fogDensity");
-	GLint matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
-	GLint matAmbientLoc = glGetUniformLocation(program, "material.ambient");
-	GLint matSpecularLoc = glGetUniformLocation(program, "material.specular");
-	GLint matShineLoc = glGetUniformLocation(program, "material.shininess");
+        GLint matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
+        GLint matAmbientLoc = glGetUniformLocation(program, "material.ambient");
+        GLint matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
+        GLint matSpecularLoc = glGetUniformLocation(program, "material.specular");
+        GLint matShineLoc = glGetUniformLocation(program, "material.shininess");
+        GLint matUseTexLoc = glGetUniformLocation(program, "material.useTexture");
 
         const glm::vec3 lightColors[3] = {
                 glm::vec3(2.0f, 0.0f, 0.0f),
@@ -580,8 +583,10 @@ int main() {
                                 MaterialInfo mat;
                                 if (it != obj.materials.end()) mat = it->second;
                                 glUniform3fv(matAmbientLoc, 1, glm::value_ptr(mat.Ka));
+                                glUniform3fv(matDiffuseColorLoc, 1, glm::value_ptr(mat.Kd));
                                 glUniform3fv(matSpecularLoc, 1, glm::value_ptr(mat.Ks));
                                 glUniform1f(matShineLoc, mat.Ns);
+                                glUniform1i(matUseTexLoc, mat.texture ? 1 : 0);
                                 glActiveTexture(GL_TEXTURE0);
                                 glBindTexture(GL_TEXTURE_2D, mat.texture);
                                 glBindVertexArray(g->vao);
@@ -590,11 +595,13 @@ int main() {
                 }
                 // Desenha a linha da curva para depuracao se habilitado
                 if (showCurve && curveVAO) {
-                        MaterialInfo dbg; dbg.Ka = glm::vec3(1.0f, 0.0f, 0.0f); dbg.Ks = glm::vec3(0.0f); dbg.Ns = 1.0f; dbg.texture = 0;
+                        MaterialInfo dbg; dbg.Ka = glm::vec3(1.0f, 0.0f, 0.0f); dbg.Kd = dbg.Ka; dbg.Ks = glm::vec3(0.0f); dbg.Ns = 1.0f; dbg.texture = 0;
                         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
                         glUniform3fv(matAmbientLoc, 1, glm::value_ptr(dbg.Ka));
+                        glUniform3fv(matDiffuseColorLoc, 1, glm::value_ptr(dbg.Kd));
                         glUniform3fv(matSpecularLoc, 1, glm::value_ptr(dbg.Ks));
                         glUniform1f(matShineLoc, dbg.Ns);
+                        glUniform1i(matUseTexLoc, 0);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, 0);
                         glBindVertexArray(curveVAO);
