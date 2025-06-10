@@ -56,6 +56,23 @@ static const float lightOrbitRadius = 5.0f;   // raio da orbita das luzes
 static const float lightOrbitHeight = 5.0f;   // altura das luzes em relacao ao carro
 static const float lightOrbitSpeed = glm::radians(90.0f); // velocidade de rotacao das luzes
 
+// Estados globais dos componentes de iluminacao (Phong)
+static bool ambientEnabled = true;   // luz ambiente = constante e uniforme
+static bool diffuseEnabled = true;   // luz difusa = depende da orientacao da superficie
+static bool specularEnabled = true;  // luz especular = brilho/reflexos
+
+// Coeficientes de atenuacao (perda de intensidade com a distancia)
+static float attLinear = 0.045f;     // componente linear
+static float attQuadratic = 0.0075f; // componente quadratica
+
+// Densidade do fog (neblina/atmosfera)
+static float currentFogDensity = 0.05f;
+
+// Flags auxiliares para detectar pressionamentos unicos das teclas 1-3
+static bool key1Pressed = false;
+static bool key2Pressed = false;
+static bool key3Pressed = false;
+
 // Carrega uma textura 2D e gera mipmaps
 // Uso do sampler2D no fragment shader (texturizacao)
 static GLuint loadTexture(const std::string& file) {
@@ -533,14 +550,14 @@ static void setupInitialLights(const UniformLocations& loc, const glm::vec3 ligh
         glUniform3fv(loc.lightPosLoc[i],1,glm::value_ptr(lightPositions[i]));
         glUniform3fv(loc.lightColorLoc[i],1,glm::value_ptr(lightColors[i]));
         glUniform1f(loc.lightConstLoc[i],1.0f);
-        glUniform1f(loc.lightLinLoc[i],0.045f);
-        glUniform1f(loc.lightQuadLoc[i],0.0075f);
+        glUniform1f(loc.lightLinLoc[i],attLinear);      // valor inicial linear
+        glUniform1f(loc.lightQuadLoc[i],attQuadratic);  // valor inicial quadratico
     }
     glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f,-1.0f,-0.3f));
     glm::vec3 sunColor(0.4f,0.45f,0.5f);
     setupDirectionalLight(loc.dirLightDirLoc, loc.dirLightColorLoc, sunDir, sunColor);
     glUniform3f(loc.fogColorLoc,0.6f,0.6f,0.65f);
-    glUniform1f(loc.fogDensityLoc,0.05f);
+    glUniform1f(loc.fogDensityLoc,currentFogDensity);
     glUniform1i(loc.matDiffuseLoc,0);
 }
 
@@ -550,6 +567,34 @@ static float deltaTime(float& last){
     float dt = now - last;
     last = now;
     return dt;
+}
+
+// --- Funcoes de controle de iluminacao ---
+
+// Alterna luz ambiente (Ka) que eh constante e uniforme na cena
+static void toggleAmbientLighting(){
+    ambientEnabled = !ambientEnabled;
+}
+
+// Alterna luz difusa (Kd) que depende da orientacao da superficie
+static void toggleDiffuseLighting(){
+    diffuseEnabled = !diffuseEnabled;
+}
+
+// Alterna luz especular (Ks) que gera brilho e reflexos
+static void toggleSpecularLighting(){
+    specularEnabled = !specularEnabled;
+}
+
+// Ajusta os coeficientes de atenuacao linear e quadratica
+static void adjustAttenuation(float delta){
+    attLinear     = glm::max(0.0f, attLinear + delta);
+    attQuadratic  = glm::max(0.0f, attQuadratic + delta);
+}
+
+// Ajusta a densidade do fog (neblina) para simular profundidade
+static void adjustFogDensity(float delta){
+    currentFogDensity = glm::max(0.0f, currentFogDensity + delta);
 }
 
 // Alterna entre câmera livre e câmera que persegue o carro (tecla O)
@@ -579,6 +624,45 @@ static void handleCurveKeys(GLFWwindow* win, bool& showCurve, bool& fPressed, si
         fPressed = false;
     if(glfwGetKey(win, GLFW_KEY_R) == GLFW_PRESS)
         pathIdx = 0;
+}
+
+// Processa as teclas relacionadas a iluminacao e fog
+static void handleLightingKeys(GLFWwindow* win){
+    // Toggle de Ka
+    if(glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS && !key1Pressed){
+        toggleAmbientLighting();
+        key1Pressed = true;
+    }
+    if(glfwGetKey(win, GLFW_KEY_1) == GLFW_RELEASE)
+        key1Pressed = false;
+
+    // Toggle de Kd
+    if(glfwGetKey(win, GLFW_KEY_2) == GLFW_PRESS && !key2Pressed){
+        toggleDiffuseLighting();
+        key2Pressed = true;
+    }
+    if(glfwGetKey(win, GLFW_KEY_2) == GLFW_RELEASE)
+        key2Pressed = false;
+
+    // Toggle de Ks
+    if(glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS && !key3Pressed){
+        toggleSpecularLighting();
+        key3Pressed = true;
+    }
+    if(glfwGetKey(win, GLFW_KEY_3) == GLFW_RELEASE)
+        key3Pressed = false;
+
+    // Ajuste de atenuacao com '+' e '-'
+    if(glfwGetKey(win, GLFW_KEY_EQUAL) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_KP_ADD) == GLFW_PRESS)
+        adjustAttenuation(0.005f);
+    if(glfwGetKey(win, GLFW_KEY_MINUS) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_KP_SUBTRACT) == GLFW_PRESS)
+        adjustAttenuation(-0.005f);
+
+    // Ajuste de densidade do fog com 'N' e 'M'
+    if(glfwGetKey(win, GLFW_KEY_N) == GLFW_PRESS)
+        adjustFogDensity(-0.005f);
+    if(glfwGetKey(win, GLFW_KEY_M) == GLFW_PRESS)
+        adjustFogDensity(0.005f);
 }
 
 // Atualiza posição e orientação da câmera
@@ -631,8 +715,12 @@ static void sendFrameUniforms(const UniformLocations& loc, const glm::mat4& view
     glUniformMatrix4fv(loc.viewLoc,1,GL_FALSE,glm::value_ptr(view));
     glUniformMatrix4fv(loc.projLoc,1,GL_FALSE,glm::value_ptr(proj));
     glUniform3fv(loc.viewPosLoc,1,glm::value_ptr(cam));
-    for(int i=0;i<3;++i)
+    for(int i=0;i<3;++i){
         glUniform3fv(loc.lightPosLoc[i],1,glm::value_ptr(lightPositions[i]));
+        glUniform1f(loc.lightLinLoc[i], attLinear);      // atenuacao linear
+        glUniform1f(loc.lightQuadLoc[i], attQuadratic);  // atenuacao quadratica
+    }
+    glUniform1f(loc.fogDensityLoc, currentFogDensity);   // densidade do fog
 }
 
 // Desenha todos os objetos da cena
@@ -642,9 +730,13 @@ static void renderObjects(const std::vector<Obj3D>& scene, const UniformLocation
         for(Group* g : obj.mesh->groups){
             auto it = obj.materials.find(g->material);
             MaterialInfo mat; if(it != obj.materials.end()) mat = it->second;
-            glUniform3fv(loc.matAmbientLoc,1,glm::value_ptr(mat.Ka));
-            glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(mat.Kd));
-            glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(mat.Ks));
+            // Envia componentes Ka/Kd/Ks considerando se estao habilitados
+            glm::vec3 Ka = ambientEnabled  ? mat.Ka : glm::vec3(0.0f);
+            glm::vec3 Kd = diffuseEnabled  ? mat.Kd : glm::vec3(0.0f);
+            glm::vec3 Ks = specularEnabled ? mat.Ks : glm::vec3(0.0f);
+            glUniform3fv(loc.matAmbientLoc,1,glm::value_ptr(Ka));
+            glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(Kd));
+            glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(Ks));
             glUniform1f(loc.matShineLoc, mat.Ns);
             glUniform1i(loc.matUseTexLoc, mat.texture ? 1 : 0);
             glActiveTexture(GL_TEXTURE0);
@@ -693,6 +785,7 @@ static void run(GLFWwindow* win, GLuint program, std::vector<Obj3D>& scene,
         bool camSwitched = false;
         handleCameraToggle(win, camSwitched);
         handleCurveKeys(win, showCurve, fPressed, pathIndex);
+        handleLightingKeys(win);                // processa teclas de iluminacao
         if(carIndex < scene.size())
             animateCarAlongCurve(scene[carIndex], curvePoints, pathIndex, dt);
         glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
