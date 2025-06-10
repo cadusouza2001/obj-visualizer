@@ -335,12 +335,14 @@ int main() {
         const char* fsrc = "#version 330 core\n"
                 "struct Material{ sampler2D diffuse; vec3 ambient; vec3 diffuseColor; vec3 specular; float shininess; int useTexture; };\n"
                 "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
+                "struct DirLight{ vec3 direction; vec3 color; };\n"
                 "in vec3 FragPos;\n"
                 "in vec3 Normal;\n"
                 "in vec2 TexCoord;\n"
                 "out vec4 FragColor;\n"
                 "uniform Material material;\n"
                 "uniform Light lights[3];\n"
+                "uniform DirLight dirLight;\n"
                 "uniform vec3 viewPos;\n"
                 "uniform vec3 fogColor;\n"
                 "uniform float fogDensity;\n"
@@ -362,6 +364,13 @@ int main() {
                 "  float att = 1.0 / (lights[i].constant + lights[i].linear*d + lights[i].quadratic*d*d);\n"
                 "  result += (ambient + diffuse + specular) * lights[i].color * att;\n"
                 "}\n"
+                "vec3 sunDir = normalize(-dirLight.direction);\n"
+                "float diffSun = max(dot(norm, sunDir), 0.0);\n"
+                "vec3 diffuseSun = diffSun * baseColor;\n"
+                "vec3 reflectSun = reflect(-sunDir, norm);\n"
+                "float specSun = pow(max(dot(viewDir, reflectSun),0.0), material.shininess);\n"
+                "vec3 specularSun = material.specular * specSun;\n"
+                "result += (material.ambient * baseColor + diffuseSun + specularSun) * dirLight.color;\n"
                 "float dist = length(viewPos - FragPos);\n"
                 "float fogFactor = exp(-fogDensity*dist);\n"
                 "fogFactor = clamp(fogFactor,0.0,1.0);\n"
@@ -445,9 +454,11 @@ int main() {
                 lightLinLoc[i] = glGetUniformLocation(program, (base+".linear").c_str());
                 lightQuadLoc[i] = glGetUniformLocation(program, (base+".quadratic").c_str());
         }
+        GLint dirLightDirLoc = glGetUniformLocation(program, "dirLight.direction");
+        GLint dirLightColorLoc = glGetUniformLocation(program, "dirLight.color");
         GLint viewPosLoc = glGetUniformLocation(program, "viewPos");
-	GLint fogColorLoc = glGetUniformLocation(program, "fogColor");
-	GLint fogDensityLoc = glGetUniformLocation(program, "fogDensity");
+        GLint fogColorLoc = glGetUniformLocation(program, "fogColor");
+        GLint fogDensityLoc = glGetUniformLocation(program, "fogDensity");
         GLint matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
         GLint matAmbientLoc = glGetUniformLocation(program, "material.ambient");
         GLint matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
@@ -464,9 +475,13 @@ int main() {
                 glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
                 glUniform3fv(lightColorLoc[i], 1, glm::value_ptr(lightColors[i]));
                 glUniform1f(lightConstLoc[i], 1.0f);
-                glUniform1f(lightLinLoc[i], 0.045f);     
-                glUniform1f(lightQuadLoc[i], 0.0075f);   
+                glUniform1f(lightLinLoc[i], 0.045f);
+                glUniform1f(lightQuadLoc[i], 0.0075f);
         }
+        glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.3f));
+        glm::vec3 sunColor(0.4f);
+        glUniform3fv(dirLightDirLoc, 1, glm::value_ptr(sunDir));
+        glUniform3fv(dirLightColorLoc, 1, glm::value_ptr(sunColor));
         glUniform3f(fogColorLoc, 0.5f, 0.6f, 0.7f);
         glUniform1f(fogDensityLoc, 0.05f);
         glUniform1i(matDiffuseLoc, 0);
