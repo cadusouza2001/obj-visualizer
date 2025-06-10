@@ -67,6 +67,8 @@ static float attQuadratic = 0.0075f; // componente quadratica
 
 // Densidade do fog (neblina/atmosfera)
 static float currentFogDensity = 0.05f;
+static const glm::vec3 clearColor(0.2f,0.2f,0.2f);   // cor de fundo da cena
+static const float fogStartDistance = chaseDistance;  // distancia inicial do fog
 
 // Flags auxiliares para detectar pressionamentos unicos das teclas 1-3
 static bool key1Pressed = false;
@@ -444,6 +446,7 @@ static GLuint createShaderProgram(){
                 "uniform vec3 viewPos;\n"
                 "uniform vec3 fogColor;\n"
                 "uniform float fogDensity;\n"
+                "uniform float fogStart;\n"
                 "void main(){\n"
                 "vec3 norm = normalize(Normal);\n"
                 "vec3 viewDir = normalize(viewPos - FragPos);\n"
@@ -469,8 +472,8 @@ static GLuint createShaderProgram(){
                 "float specSun = pow(max(dot(viewDir, reflectSun),0.0), material.shininess);\n"
                 "vec3 specularSun = material.specular * specSun;\n"
                 "result += (material.ambient * baseColor + diffuseSun + specularSun) * dirLight.color;\n"
-                "float dist = length(viewPos - FragPos);\n"
-                "float fogFactor = exp(-fogDensity*dist);\n"
+                "float dist = length(viewPos - FragPos) - fogStart;\n"
+                "float fogFactor = exp(-fogDensity*max(dist,0.0));\n"
                 "fogFactor = clamp(fogFactor,0.0,1.0);\n"
                 "result = mix(fogColor, result, fogFactor);\n"
                 "FragColor = vec4(result, 1.0);\n"
@@ -493,6 +496,7 @@ struct UniformLocations {
     GLint viewPosLoc;
     GLint fogColorLoc;
     GLint fogDensityLoc;
+    GLint fogStartLoc;
     GLint matDiffuseLoc;
     GLint matAmbientLoc;
     GLint matDiffuseColorLoc;
@@ -519,6 +523,7 @@ static UniformLocations getUniformLocations(GLuint program){
     loc.viewPosLoc = glGetUniformLocation(program, "viewPos");
     loc.fogColorLoc = glGetUniformLocation(program, "fogColor");
     loc.fogDensityLoc = glGetUniformLocation(program, "fogDensity");
+    loc.fogStartLoc = glGetUniformLocation(program, "fogStart");
     loc.matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
     loc.matAmbientLoc = glGetUniformLocation(program, "material.ambient");
     loc.matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
@@ -556,8 +561,9 @@ static void setupInitialLights(const UniformLocations& loc, const glm::vec3 ligh
     glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f,-1.0f,-0.3f));
     glm::vec3 sunColor(0.4f,0.45f,0.5f);
     setupDirectionalLight(loc.dirLightDirLoc, loc.dirLightColorLoc, sunDir, sunColor);
-    glUniform3f(loc.fogColorLoc,0.6f,0.6f,0.65f);
+    glUniform3fv(loc.fogColorLoc,1,glm::value_ptr(clearColor));
     glUniform1f(loc.fogDensityLoc,currentFogDensity);
+    glUniform1f(loc.fogStartLoc,fogStartDistance);
     glUniform1i(loc.matDiffuseLoc,0);
 }
 
@@ -721,6 +727,7 @@ static void sendFrameUniforms(const UniformLocations& loc, const glm::mat4& view
         glUniform1f(loc.lightQuadLoc[i], attQuadratic);  // atenuacao quadratica
     }
     glUniform1f(loc.fogDensityLoc, currentFogDensity);   // densidade do fog
+    glUniform1f(loc.fogStartLoc, fogStartDistance);      // inicio do fog
 }
 
 // Desenha todos os objetos da cena
@@ -797,7 +804,7 @@ static void run(GLFWwindow* win, GLuint program, std::vector<Obj3D>& scene,
         glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0,1,0));
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), 800.0f/600.0f, 0.1f, 100.0f);
 
-        glClearColor(0.2f,0.2f,0.2f,1.0f);
+        glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(program);
         sendFrameUniforms(loc, view, proj, camPos, lightPositions);
