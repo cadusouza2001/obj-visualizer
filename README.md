@@ -81,7 +81,6 @@ Projeto universitário de Computação Gráfica. Este aplicativo carrega modelos
 
 - A triangulação das faces é obrigatória para garantir compatibilidade com `glDrawArrays(GL_TRIANGLES)`.
 - O programa suporta múltiplos modelos `.OBJ`, cada um com suas texturas e materiais distintos.
-- As transformações e animações serão estendidas em projetos futuros com curvas B-Spline e movimentação de veículos.
 - Os caminhos dos modelos e do arquivo de curva são configurados em `scene.txt`.
 
 ---
