@@ -453,9 +453,9 @@ int main() {
 	GLint matShineLoc = glGetUniformLocation(program, "material.shininess");
 
         const glm::vec3 lightColors[3] = {
-                glm::vec3(5.0f, 0.0f, 0.0f),
-                glm::vec3(0.0f, 5.0f, 0.0f),
-                glm::vec3(0.0f, 0.0f, 5.0f)
+                glm::vec3(2.0f, 0.0f, 0.0f),
+                glm::vec3(0.0f, 2.0f, 0.0f),
+                glm::vec3(0.0f, 0.0f, 2.0f)
         };
         for(int i=0;i<3;++i){
                 glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
