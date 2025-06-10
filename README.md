@@ -48,11 +48,21 @@ Projeto universitário de Computação Gráfica desenvolvido para o Trabalho de 
 
 ## ⌨️ Controles
 
-- `W / ↑`: mover para frente  
-- `S / ↓`: mover para trás  
-- `A / ←`: mover para esquerda  
-- `D / →`: mover para direita  
-- **Mouse (botão esquerdo)**: rotaciona a câmera  
+- `W / ↑`: mover para frente
+- `S / ↓`: mover para trás
+- `A / ←`: mover para esquerda
+- `D / →`: mover para direita
+- **Mouse (botão esquerdo)**: rotaciona a câmera
+- `O`: alterna entre câmera livre e câmera que segue o carro
+- `F`: mostra/oculta a curva de animação
+- `R`: reinicia o percurso do carro
+- `1`: liga/desliga luz ambiente
+- `2`: liga/desliga luz difusa
+- `3`: liga/desliga luz especular
+- `+`/`=`: aumenta a atenuação das luzes
+- `-`: diminui a atenuação das luzes
+- `N`: diminui a densidade do fog
+- `M`: aumenta a densidade do fog
 - `ESC`: fecha o programa
 
 ---
