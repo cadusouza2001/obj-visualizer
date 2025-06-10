@@ -130,16 +130,24 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CameraControls.h" />
     <ClInclude Include="Face.h" />
     <ClInclude Include="Group.h" />
+    <ClInclude Include="LightControls.h" />
     <ClInclude Include="Mesh.h" />
+    <ClInclude Include="SceneLoader.h" />
+    <ClInclude Include="ShaderUtils.h" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CameraControls.cpp" />
     <ClCompile Include="Face.cpp" />
     <ClCompile Include="Group.cpp" />
+    <ClCompile Include="LightControls.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Mesh.cpp" />
+    <ClCompile Include="SceneLoader.cpp" />
+    <ClCompile Include="ShaderUtils.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
