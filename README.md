@@ -26,6 +26,7 @@ Projeto universitário de Computação Gráfica desenvolvido para o Trabalho de 
 - `barrels.obj`, `water.obj`: exemplos de modelos carregados
 - `*.mtl`, `*.png`: arquivos auxiliares de materiais e texturas
 - `OBJ_Visualizer.sln`: solução pronta para Visual Studio 2022
+- `scene.txt`: define quais `.obj` e curva de animação serão carregados
 
 ---
 
@@ -69,6 +70,7 @@ Projeto universitário de Computação Gráfica desenvolvido para o Trabalho de 
 - A triangulação das faces é obrigatória para garantir compatibilidade com `glDrawArrays(GL_TRIANGLES)`.
 - O programa suporta múltiplos modelos `.OBJ`, cada um com suas texturas e materiais distintos.
 - As transformações e animações serão estendidas no Trabalho do Grau B com curvas B-Spline e movimentação de veículos.
+- Os caminhos dos modelos e do arquivo de curva são configurados em `scene.txt`.
 
 ---
 

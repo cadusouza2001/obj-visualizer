@@ -1,0 +1,3 @@
+curve pontoscurva.txt
+obj pista.obj
+obj raceCarRed.obj

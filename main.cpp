@@ -394,9 +394,36 @@ int main() {
         glUseProgram(program);
 
         // ---- Leitura do arquivo de cena com caminhos dos recursos ----
-        std::string curveFile = "pontoscurva.txt";
-        std::string trackFile = "pista.obj";
-        std::string carFile = "raceCarRed.obj";
+        struct SceneConfig {
+                std::string curveFile;
+                std::vector<std::string> objFiles;
+        } cfg;
+
+        auto loadSceneFile = [](const std::string& file, SceneConfig& out) {
+                std::ifstream in(file);
+                if(!in.is_open()) {
+                        std::cerr << "Cannot open scene file " << file << "\n";
+                        return false;
+                }
+                std::string type, path;
+                while(in >> type >> path) {
+                        if(type == "curve") out.curveFile = path;
+                        else if(type == "obj") out.objFiles.push_back(path);
+                }
+                return true;
+        };
+
+        if(!loadSceneFile("scene.txt", cfg)) return -1;
+
+        std::string curveFile = cfg.curveFile;
+        if(curveFile.empty()) {
+                std::cerr << "No curve file specified in scene.txt\n";
+                return -1;
+        }
+        if(cfg.objFiles.empty()) {
+                std::cerr << "No OBJ files listed in scene.txt\n";
+                return -1;
+        }
 
         // Carrega pontos da curva da animacao
         std::vector<glm::vec3> curvePoints;
@@ -426,8 +453,8 @@ int main() {
 
         std::vector<Obj3D> scene;
 
-        // ---- Carregamento dos modelos da pista e do carro ----
-        std::vector<std::string> objFiles = { trackFile, carFile };
+        // ---- Carregamento dos modelos listados no arquivo de cena ----
+        std::vector<std::string> objFiles = cfg.objFiles;
         for (const std::string& path : objFiles) {
                 Mesh* m = new Mesh();
                 if (!loadOBJWithTriangulation(m, path)) continue;
