@@ -1,22 +1,29 @@
-# Created by Kenney (www.kenney.nl) 
+# Created by Kenney (www.kenney.nl)
 
+# Pneus: pretos com leve iluminação ambiente
 newmtl carTire
-Ka 0.000000 0.000000 0.000000 
-Kd 0.2666667 0.2666667 0.2666667 
-Ks 0.330000 0.330000 0.330000 
+Ka 0.05 0.05 0.05
+Kd 0.1 0.1 0.1
+Ks 0.3 0.3 0.3
+Ns 64.0
 
+# Lataria vermelha: bem visível mesmo sem luz direta
 newmtl red
-Ka 0.000000 0.000000 0.000000 
-Kd 0.9098039 0.3333333 0.3254902 
-Ks 0.330000 0.330000 0.330000 
+Ka 0.5 0.05 0.05
+Kd 1.0 0.1 0.1
+Ks 0.7 0.2 0.2
+Ns 128.0
 
+# Vidro: azul-claro visível e reflexivo
 newmtl glass
-Ka 0.000000 0.000000 0.000000 
-Kd 0.2980392 0.3764706 0.4666667 
-Ks 0.330000 0.330000 0.330000 
+Ka 0.2 0.25 0.35
+Kd 0.4 0.5 0.7
+Ks 1.0 1.0 1.0
+Ns 200.0
 
+# Detalhes cinza: claros com boa reflexão
 newmtl grey
-Ka 0.000000 0.000000 0.000000 
-Kd 0.945098 0.9490196 0.9647059 
-Ks 0.330000 0.330000 0.330000 
-
+Ka 0.4 0.4 0.4
+Kd 0.7 0.7 0.7
+Ks 0.6 0.6 0.6
+Ns 96.0
