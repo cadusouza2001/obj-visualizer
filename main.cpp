@@ -466,10 +466,11 @@ int main() {
         GLint matShineLoc = glGetUniformLocation(program, "material.shininess");
         GLint matUseTexLoc = glGetUniformLocation(program, "material.useTexture");
 
+        // luzes orbitais neutras para realcar as cores originais dos materiais
         const glm::vec3 lightColors[3] = {
-                glm::vec3(2.0f, 0.0f, 0.0f),
-                glm::vec3(0.0f, 2.0f, 0.0f),
-                glm::vec3(0.0f, 0.0f, 2.0f)
+                glm::vec3(1.0f),
+                glm::vec3(1.0f),
+                glm::vec3(1.0f)
         };
         for(int i=0;i<3;++i){
                 glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
@@ -478,11 +479,13 @@ int main() {
                 glUniform1f(lightLinLoc[i], 0.045f);
                 glUniform1f(lightQuadLoc[i], 0.0075f);
         }
+        // luz direcional principal (sol)
         glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.3f));
-        glm::vec3 sunColor(0.4f);
+        glm::vec3 sunColor(1.0f);
         glUniform3fv(dirLightDirLoc, 1, glm::value_ptr(sunDir));
         glUniform3fv(dirLightColorLoc, 1, glm::value_ptr(sunColor));
-        glUniform3f(fogColorLoc, 0.5f, 0.6f, 0.7f);
+        // cor do nevoeiro levemente mais clara para nao distorcer tons
+        glUniform3f(fogColorLoc, 0.6f, 0.6f, 0.65f);
         glUniform1f(fogDensityLoc, 0.05f);
         glUniform1i(matDiffuseLoc, 0);
 
