@@ -493,7 +493,7 @@ int main() {
         }
         // luz direcional principal (sol)
         glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.3f));
-        glm::vec3 sunColor(1.0f);
+        glm::vec3 sunColor(0.4f, 0.45f, 0.5f); // luz difusa azulada
         glUniform3fv(dirLightDirLoc, 1, glm::value_ptr(sunDir));
         glUniform3fv(dirLightColorLoc, 1, glm::value_ptr(sunColor));
         // cor do nevoeiro levemente mais clara para nao distorcer tons
