@@ -10,11 +10,11 @@
 #include <sstream>
 #include <fstream>
 #include <limits>
-#include "Mesh.h"      // definicoes de estrutura de um OBJ
+#include "Mesh.h"
 #include "Group.h"
 #include "Face.h"
 
-// stb_image e utilizado para carregar texturas de arquivos
+// stb_image eh utilizado para carregar texturas de arquivos
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -117,7 +117,6 @@ static GLuint buildProgram(const std::string& vsrc, const std::string& fsrc) {
 }
 
 // Converte faces com mais de 3 vertices em triangulos
-// (criterio Grau A: triangulacao)
 static void triangulate(Mesh* mesh) {
 	for (Group* g : mesh->groups) {
 		std::vector<Face*> newFaces;
@@ -141,7 +140,8 @@ static void triangulate(Mesh* mesh) {
 
 // Calcula o bounding box (min e max) da malha
 // Util para colisao ou visualizacao dos limites
-static void computeBoundingBox(Mesh* mesh, glm::vec3& mn, glm::vec3& mx) {
+// Determina limites min/max dos vértices, formando a caixa englobante da malha
+static void computeMeshBoundingBox(Mesh* mesh, glm::vec3& mn, glm::vec3& mx) {
 	mn = glm::vec3(std::numeric_limits<float>::max());
 	mx = glm::vec3(-std::numeric_limits<float>::max());
 	for (auto v : mesh->vertex) {
@@ -209,14 +209,13 @@ static bool loadOBJWithTriangulation(Mesh* mesh, const std::string& file) {
 		}
                 else if (pref == "usemtl") {
                         std::string mat; iss >> mat;
-                        // If the current group already has faces associated with
-                        // a previous material, start a new group so that each
-                        // Group corresponds to a single material. This avoids
-                        // losing material assignments when multiple materials
-                        // are used within the same OBJ group.
+                        // Se o grupo atual já tem faces associadas a um material anterior,
+                        // inicie um novo grupo para que cada Group corresponda a um único material.
+                        // Isso evita perder atribuições de material quando múltiplos materiais
+                        // são usados dentro do mesmo grupo OBJ.
                         if (!current->faces.empty()) {
                                 Group* ng = new Group();
-                                ng->name = current->name; // keep same logical group name
+                                ng->name = current->name; // mantém o mesmo nome lógico do grupo
                                 mesh->groups.push_back(ng);
                                 current = ng;
                         }
@@ -260,9 +259,61 @@ static bool loadCurve(const std::string& file, std::vector<glm::vec3>& pts) {
         return !pts.empty();
 }
 
+// Estrutura lida do arquivo scene.txt que define curva e modelos
+struct SceneConfig {
+        std::string curveFile;              // caminho para pontos da curva
+        std::vector<std::string> objFiles;   // arquivos OBJ a carregar
+};
+
+// Parse simples do arquivo de cena
+static bool loadSceneConfig(const std::string& file, SceneConfig& out) {
+        std::ifstream in(file);
+        if(!in.is_open()) {
+                std::cerr << "Cannot open scene file " << file << "\n";
+                return false;
+        }
+        std::string type, path;
+        while(in >> type >> path) {
+                if(type == "curve") out.curveFile = path;
+                else if(type == "obj") out.objFiles.push_back(path);
+        }
+        return true;
+}
+
+// Carrega todos os modelos listados na configuracao e monta objetos da cena
+static std::vector<Obj3D> loadSceneObjects(const std::vector<std::string>& paths) {
+        std::vector<Obj3D> objs;
+        for(const std::string& path : paths) {
+                Mesh* m = new Mesh();
+                if(!loadOBJWithTriangulation(m, path))
+                        continue;
+                triangulate(m); // garante que a malha possua apenas triangulos
+                for(Group* g : m->groups)
+                        g->buildBuffers(m->vertex, m->normals, m->mappings);
+                Obj3D obj; obj.mesh = m; obj.transform = glm::mat4(1.0f);
+                if(!m->mtllib.empty()) {
+                        std::map<std::string, MaterialInfo> mats;
+                        loadMTL(m->mtllib, mats);
+                        obj.materials = std::move(mats);
+                }
+                computeMeshBoundingBox(m, obj.bbMin, obj.bbMax);
+                objs.push_back(obj);
+        }
+        return objs;
+}
+
+// Configura a luz direcional principal (modelo de iluminação de Phong)
+static void setupDirectionalLight(GLint dirLoc, GLint colorLoc,
+                                  const glm::vec3& dir, const glm::vec3& color) {
+        // Envia direção e cor da luz para o shader
+        glUniform3fv(dirLoc, 1, glm::value_ptr(dir));   // influencia cálculo difuso e especular
+        glUniform3fv(colorLoc, 1, glm::value_ptr(color));
+}
+
 // Atualiza a transformacao do carro baseado na sequencia de pontos da curva
 // move o carro ao longo da curva em uma velocidade constante controlada por dt
-static void animateCarOnCurve(Obj3D& car, const std::vector<glm::vec3>& pts,
+// Interpola pontos da curva e atualiza a matriz model do carro
+static void animateCarAlongCurve(Obj3D& car, const std::vector<glm::vec3>& pts,
                               size_t& idx, float dt) {
         if (pts.size() < 2) return;
 
@@ -393,27 +444,10 @@ int main() {
         GLuint program = buildProgram(vsrc, fsrc);
         glUseProgram(program);
 
-        // ---- Leitura do arquivo de cena com caminhos dos recursos ----
-        struct SceneConfig {
-                std::string curveFile;
-                std::vector<std::string> objFiles;
-        } cfg;
-
-        auto loadSceneFile = [](const std::string& file, SceneConfig& out) {
-                std::ifstream in(file);
-                if(!in.is_open()) {
-                        std::cerr << "Cannot open scene file " << file << "\n";
-                        return false;
-                }
-                std::string type, path;
-                while(in >> type >> path) {
-                        if(type == "curve") out.curveFile = path;
-                        else if(type == "obj") out.objFiles.push_back(path);
-                }
-                return true;
-        };
-
-        if(!loadSceneFile("scene.txt", cfg)) return -1;
+        //Leitura do arquivo de cena 
+        SceneConfig cfg{};
+        if(!loadSceneConfig("scene.txt", cfg))
+                return -1;
 
         std::string curveFile = cfg.curveFile;
         if(curveFile.empty()) {
@@ -441,38 +475,21 @@ int main() {
         if (!curvePoints.empty()) {
                 glGenVertexArrays(1, &curveVAO);
                 glGenBuffers(1, &curveVBO);
-                glBindVertexArray(curveVAO);
+                glBindVertexArray(curveVAO); // seleciona buffer da curva
                 glBindBuffer(GL_ARRAY_BUFFER, curveVBO);
                 glBufferData(GL_ARRAY_BUFFER, curvePoints.size() * sizeof(glm::vec3), curvePoints.data(), GL_STATIC_DRAW);
                 glEnableVertexAttribArray(0);
                 glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
                 glVertexAttrib3f(1, 0.0f, 1.0f, 0.0f); // normal constante
                 glVertexAttrib2f(2, 0.0f, 0.0f);       // texcoord nulo
-                glBindVertexArray(0);
+                glBindVertexArray(0);        // volta ao VAO padrão
         }
 
-        std::vector<Obj3D> scene;
+        // Carrega modelos e materiais especificados no arquivo de cena
+        std::vector<Obj3D> scene = loadSceneObjects(cfg.objFiles);
 
-        // ---- Carregamento dos modelos listados no arquivo de cena ----
-        std::vector<std::string> objFiles = cfg.objFiles;
-        for (const std::string& path : objFiles) {
-                Mesh* m = new Mesh();
-                if (!loadOBJWithTriangulation(m, path)) continue;
-                triangulate(m); // garante que sejam triangulos
-                for (Group* g : m->groups) {
-                        g->buildBuffers(m->vertex, m->normals, m->mappings);
-                }
-                Obj3D obj; obj.mesh = m; obj.transform = glm::mat4(1.0f);
-                if (!m->mtllib.empty()) {
-                        std::map<std::string, MaterialInfo> mats; loadMTL(m->mtllib, mats); obj.materials = std::move(mats);
-                }
-                computeBoundingBox(m, obj.bbMin, obj.bbMax);
-                scene.push_back(obj);
-        }
-
-        // indices para acesso rapido
-        size_t trackIndex = 0;
-        size_t carIndex = scene.size() > 1 ? 1 : 0;
+        // indices de objetos relevantes
+        size_t carIndex = scene.size() > 1 ? 1 : 0; // assume que o primeiro OBJ eh a pista
         size_t pathIndex = 0;           // ponto atual da curva
         bool showCurve = false;
         bool fPressed = false;
@@ -480,11 +497,12 @@ int main() {
 	GLint modelLoc = glGetUniformLocation(program, "model");
 	GLint viewLoc = glGetUniformLocation(program, "view");
 	GLint projLoc = glGetUniformLocation(program, "projection");
-        GLint lightPosLoc[3];
-        GLint lightColorLoc[3];
-        GLint lightConstLoc[3];
-        GLint lightLinLoc[3];
-        GLint lightQuadLoc[3];
+        // Locais de uniformes para cada luz pontual (Phong: ambiente/difusa/especular)
+        GLint lightPosLoc[3];    // posicao
+        GLint lightColorLoc[3];  // cor
+        GLint lightConstLoc[3];  // atenuacao constante
+        GLint lightLinLoc[3];    // atenuacao linear
+        GLint lightQuadLoc[3];   // atenuacao quadratica
         for(int i=0;i<3;++i){
                 std::string base = "lights[" + std::to_string(i) + "]";
                 lightPosLoc[i] = glGetUniformLocation(program, (base+".position").c_str());
@@ -493,11 +511,17 @@ int main() {
                 lightLinLoc[i] = glGetUniformLocation(program, (base+".linear").c_str());
                 lightQuadLoc[i] = glGetUniformLocation(program, (base+".quadratic").c_str());
         }
+        // Uniformes relacionados à luz direcional (ex.: o "sol" da cena)
         GLint dirLightDirLoc = glGetUniformLocation(program, "dirLight.direction");
         GLint dirLightColorLoc = glGetUniformLocation(program, "dirLight.color");
+
+        // Posicao do observador para calculo do termo especular
         GLint viewPosLoc = glGetUniformLocation(program, "viewPos");
+        // Parametros do efeito de neblina (fog)
         GLint fogColorLoc = glGetUniformLocation(program, "fogColor");
         GLint fogDensityLoc = glGetUniformLocation(program, "fogDensity");
+
+        // Uniformes do material aplicado (Phong + texturas)
         GLint matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
         GLint matAmbientLoc = glGetUniformLocation(program, "material.ambient");
         GLint matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
@@ -512,20 +536,19 @@ int main() {
                 glm::vec3(1.0f)
         };
         for(int i=0;i<3;++i){
-                glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
-                glUniform3fv(lightColorLoc[i], 1, glm::value_ptr(lightColors[i]));
-                glUniform1f(lightConstLoc[i], 1.0f);
-                glUniform1f(lightLinLoc[i], 0.045f);
-                glUniform1f(lightQuadLoc[i], 0.0075f);
+                glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));   // posição das luzes
+                glUniform3fv(lightColorLoc[i], 1, glm::value_ptr(lightColors[i]));    // cor das luzes
+                glUniform1f(lightConstLoc[i], 1.0f);                // atenuação constante
+                glUniform1f(lightLinLoc[i], 0.045f);                // atenuação linear
+                glUniform1f(lightQuadLoc[i], 0.0075f);              // atenuação quadrática
         }
         // luz direcional principal (sol)
         glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.3f));
         glm::vec3 sunColor(0.4f, 0.45f, 0.5f); // luz difusa azulada
-        glUniform3fv(dirLightDirLoc, 1, glm::value_ptr(sunDir));
-        glUniform3fv(dirLightColorLoc, 1, glm::value_ptr(sunColor));
+        setupDirectionalLight(dirLightDirLoc, dirLightColorLoc, sunDir, sunColor);
         // cor do nevoeiro levemente mais clara para nao distorcer tons
-        glUniform3f(fogColorLoc, 0.6f, 0.6f, 0.65f);
-        glUniform1f(fogDensityLoc, 0.05f);
+        glUniform3f(fogColorLoc, 0.6f, 0.6f, 0.65f); // cor do fog
+        glUniform1f(fogDensityLoc, 0.05f);         // densidade da neblina
         glUniform1i(matDiffuseLoc, 0);
 
         // posicao da camera e orientacao sao definidas globalmente
@@ -559,7 +582,7 @@ int main() {
 
                 // Atualiza a transformacao do carro a cada frame com velocidade reduzida
                 if (carIndex < scene.size())
-                        animateCarOnCurve(scene[carIndex], curvePoints, pathIndex, dt);
+                        animateCarAlongCurve(scene[carIndex], curvePoints, pathIndex, dt);
 
                 glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
                 glm::vec3 carFront = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(0, 0, -1, 0)));
@@ -627,27 +650,27 @@ int main() {
 		glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glUseProgram(program);
-                glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-                glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-                glUniform3fv(viewPosLoc, 1, glm::value_ptr(camPos));
+                glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));         // matriz view
+                glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));   // matriz projection
+                glUniform3fv(viewPosLoc, 1, glm::value_ptr(camPos));     // posição da câmera
                 for(int i=0;i<3;++i)
                         glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
 
                 for (const Obj3D& obj : scene) {
-                        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.transform));
+                        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.transform));       // matriz model
                         for (Group* g : obj.mesh->groups) {
                                 auto it = obj.materials.find(g->material);
                                 MaterialInfo mat;
                                 if (it != obj.materials.end()) mat = it->second;
-                                glUniform3fv(matAmbientLoc, 1, glm::value_ptr(mat.Ka));
-                                glUniform3fv(matDiffuseColorLoc, 1, glm::value_ptr(mat.Kd));
-                                glUniform3fv(matSpecularLoc, 1, glm::value_ptr(mat.Ks));
+                                glUniform3fv(matAmbientLoc, 1, glm::value_ptr(mat.Ka));          // Ka
+                                glUniform3fv(matDiffuseColorLoc, 1, glm::value_ptr(mat.Kd));     // Kd
+                                glUniform3fv(matSpecularLoc, 1, glm::value_ptr(mat.Ks));         // Ks
                                 glUniform1f(matShineLoc, mat.Ns);
                                 glUniform1i(matUseTexLoc, mat.texture ? 1 : 0);
                                 glActiveTexture(GL_TEXTURE0);
-                                glBindTexture(GL_TEXTURE_2D, mat.texture);
-                                glBindVertexArray(g->vao);
-                                glDrawArrays(GL_TRIANGLES, 0, g->numVertices);
+                                glBindTexture(GL_TEXTURE_2D, mat.texture);         // texturização difusa
+                                glBindVertexArray(g->vao);      // geometria da malha
+                                glDrawArrays(GL_TRIANGLES, 0, g->numVertices);   // envia para rasterização
                         }
                 }
                 // Desenha a linha da curva para depuracao se habilitado
@@ -660,7 +683,7 @@ int main() {
                         glUniform1f(matShineLoc, dbg.Ns);
                         glUniform1i(matUseTexLoc, 0);
                         glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, 0);
+                        glBindTexture(GL_TEXTURE_2D, 0);                          // sem textura
                         glBindVertexArray(curveVAO);
                         glDrawArrays(GL_LINE_STRIP, 0, (GLsizei)curvePoints.size());
                 }
