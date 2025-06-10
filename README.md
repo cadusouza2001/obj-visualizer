@@ -1,6 +1,6 @@
 # Visualizador de Modelos 3D com OpenGL
 
-Projeto universitário de Computação Gráfica desenvolvido para o Trabalho de Grau B (GB). Este aplicativo carrega modelos 3D no formato `.OBJ`, aplica materiais definidos via `.MTL`, renderiza com texturas e iluminação baseada em shaders GLSL, e permite navegação interativa por uma cena 3D com múltiplos objetos.
+Projeto universitário de Computação Gráfica. Este aplicativo carrega modelos 3D no formato `.OBJ`, aplica materiais definidos via `.MTL`, renderiza com texturas e iluminação baseada em shaders GLSL, e permite navegação interativa por uma cena 3D com múltiplos objetos.
 
 ---
 
@@ -14,6 +14,7 @@ Projeto universitário de Computação Gráfica desenvolvido para o Trabalho de 
 - ✅ Navegação com câmera virtual estilo FPS (`WASD` ou setas)
 - ✅ Cálculo de bounding box para cada objeto
 - ✅ Cena com múltiplos modelos carregados de forma coerente
+- ✅ Visualização da malha em modo wireframe (tecla `T`)
 
 ---
 
@@ -56,6 +57,7 @@ Projeto universitário de Computação Gráfica desenvolvido para o Trabalho de 
 - `O`: alterna entre câmera livre e câmera que segue o carro
 - `F`: mostra/oculta a curva de animação
 - `R`: reinicia o percurso do carro
+- `T`: alterna a visualização wireframe (GL_LINE/GL_FILL)
 - `1`: liga/desliga luz ambiente
 - `2`: liga/desliga luz difusa
 - `3`: liga/desliga luz especular
@@ -79,7 +81,7 @@ Projeto universitário de Computação Gráfica desenvolvido para o Trabalho de 
 
 - A triangulação das faces é obrigatória para garantir compatibilidade com `glDrawArrays(GL_TRIANGLES)`.
 - O programa suporta múltiplos modelos `.OBJ`, cada um com suas texturas e materiais distintos.
-- As transformações e animações serão estendidas no Trabalho do Grau B com curvas B-Spline e movimentação de veículos.
+- As transformações e animações serão estendidas em projetos futuros com curvas B-Spline e movimentação de veículos.
 - Os caminhos dos modelos e do arquivo de curva são configurados em `scene.txt`.
 
 ---
