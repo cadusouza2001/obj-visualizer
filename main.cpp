@@ -51,6 +51,10 @@ static const float chaseHeight = 2.0f;     // altura da camera em relacao ao car
 static float carAngleOffset = glm::radians(-90.0f); // offset angular aplicado ao carro (radianos)
 static float orbitYaw = 0.0f;              // angulo horizontal ao orbitar o carro
 static float orbitPitch = 0.0f;            // angulo vertical ao orbitar o carro
+static float lightOrbitAngle = 0.0f;       // angulo base das luzes em orbita
+static const float lightOrbitRadius = 5.0f;   // raio da orbita das luzes
+static const float lightOrbitHeight = 5.0f;   // altura das luzes em relacao ao carro
+static const float lightOrbitSpeed = glm::radians(90.0f); // velocidade de rotacao das luzes
 
 // Carrega uma textura 2D e gera mipmaps
 // Uso do sampler2D no fragment shader (texturizacao)
@@ -448,12 +452,17 @@ int main() {
 	GLint matSpecularLoc = glGetUniformLocation(program, "material.specular");
 	GLint matShineLoc = glGetUniformLocation(program, "material.shininess");
 
+        const glm::vec3 lightColors[3] = {
+                glm::vec3(5.0f, 0.0f, 0.0f),
+                glm::vec3(0.0f, 5.0f, 0.0f),
+                glm::vec3(0.0f, 0.0f, 5.0f)
+        };
         for(int i=0;i<3;++i){
                 glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
-                glUniform3f(lightColorLoc[i], 1.0f, 1.0f, 1.0f);
+                glUniform3fv(lightColorLoc[i], 1, glm::value_ptr(lightColors[i]));
                 glUniform1f(lightConstLoc[i], 1.0f);
-                glUniform1f(lightLinLoc[i], 0.09f);
-                glUniform1f(lightQuadLoc[i], 0.032f);
+                glUniform1f(lightLinLoc[i], 0.045f);     
+                glUniform1f(lightQuadLoc[i], 0.0075f);   
         }
         glUniform3f(fogColorLoc, 0.5f, 0.6f, 0.7f);
         glUniform1f(fogDensityLoc, 0.05f);
@@ -543,16 +552,26 @@ int main() {
                 }
                 if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(win, 1);
 
-		glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0, 1, 0));
-		glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+                glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0, 1, 0));
+                glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+
+                lightOrbitAngle -= lightOrbitSpeed * dt; // sentido horario
+                for(int i=0;i<3;++i){
+                        float ang = lightOrbitAngle + i * 2.0f * 3.14159265f / 3.0f;
+                        lightPositions[i] = carPos + glm::vec3(cos(ang) * lightOrbitRadius,
+                                                             lightOrbitHeight,
+                                                             sin(ang) * lightOrbitRadius);
+                }
 
 
 		glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glUseProgram(program);
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
-		glUniform3fv(viewPosLoc, 1, glm::value_ptr(camPos));
+                glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+                glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                glUniform3fv(viewPosLoc, 1, glm::value_ptr(camPos));
+                for(int i=0;i<3;++i)
+                        glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
 
                 for (const Obj3D& obj : scene) {
                         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.transform));
