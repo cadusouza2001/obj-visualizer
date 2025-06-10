@@ -207,9 +207,21 @@ static bool loadOBJWithTriangulation(Mesh* mesh, const std::string& file) {
 			}
 			current->name = name;
 		}
-		else if (pref == "usemtl") {
-			iss >> current->material;
-		}
+                else if (pref == "usemtl") {
+                        std::string mat; iss >> mat;
+                        // If the current group already has faces associated with
+                        // a previous material, start a new group so that each
+                        // Group corresponds to a single material. This avoids
+                        // losing material assignments when multiple materials
+                        // are used within the same OBJ group.
+                        if (!current->faces.empty()) {
+                                Group* ng = new Group();
+                                ng->name = current->name; // keep same logical group name
+                                mesh->groups.push_back(ng);
+                                current = ng;
+                        }
+                        current->material = mat;
+                }
 		else if (pref == "mtllib") {
 			iss >> mesh->mtllib;
 		}
