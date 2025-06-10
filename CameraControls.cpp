@@ -14,7 +14,6 @@ static bool freeCamera = false;            // false: camera segue o carro
 static bool oPressed = false;              // controle da tecla O
 static const float chaseDistance = 5.0f;   // dist. da camera atras do carro
 static const float chaseHeight = 2.0f;     // altura da camera em relacao ao carro
-static float carAngleOffset = glm::radians(-90.0f); // offset angular aplicado ao carro (radianos)
 static float orbitYaw = 0.0f;              // angulo horizontal ao orbitar o carro
 static float orbitPitch = 0.0f;            // angulo vertical ao orbitar o carro
 
@@ -60,40 +59,11 @@ void handleCameraToggle(GLFWwindow* win, bool& cameraSwitched){
     }
 }
 
-void handleCurveKeys(GLFWwindow* win, bool& showCurve, bool& fPressed, size_t& pathIdx){
-    if(glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS && !fPressed){
-        showCurve = !showCurve;
-        fPressed = true;
-    }
-    if(glfwGetKey(win, GLFW_KEY_F) == GLFW_RELEASE)
-        fPressed = false;
-    if(glfwGetKey(win, GLFW_KEY_R) == GLFW_PRESS)
-        pathIdx = 0;
-}
-
 float deltaTime(float& last){
     float now = (float)glfwGetTime();
     float dt = now - last;
     last = now;
     return dt;
-}
-
-void animateCarAlongCurve(Obj3D& car, const std::vector<glm::vec3>& pts, size_t& idx, float dt){
-    if (pts.size() < 2) return;
-    static float segT = 0.0f;
-    const float speed = 15.0f;
-    segT += dt * speed;
-    while (segT >= 1.0f) {
-        segT -= 1.0f;
-        idx = (idx + 1) % pts.size();
-    }
-    size_t next = (idx + 1) % pts.size();
-    glm::vec3 pos = glm::mix(pts[idx], pts[next], segT);
-    glm::vec3 dir = glm::normalize(pts[next] - pts[idx]);
-    float pathAngle = atan2(dir.z, dir.x);
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
-    model = glm::rotate(model, - pathAngle + carAngleOffset, glm::vec3(0, 1, 0));
-    car.transform = model;
 }
 
 glm::vec3 updateCamera(GLFWwindow* win, const glm::vec3& carPos, const glm::vec3& carFront, float dt){

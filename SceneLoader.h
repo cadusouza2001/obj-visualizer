@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <GL/glew.h>
+#include <GLFW/glfw3.h>
 
 #include "Mesh.h"
 
@@ -48,5 +49,8 @@ bool loadCurve(const std::string& file, std::vector<glm::vec3>& pts);
 
 bool loadSceneConfig(const std::string& file, SceneConfig& out);
 std::vector<Obj3D> loadSceneObjects(const std::vector<std::string>& paths);
+
+void handleCurveKeys(GLFWwindow* win, bool& showCurve, bool& fPressed, size_t& pathIdx);
+void animateCarAlongCurve(Obj3D& car, const std::vector<glm::vec3>& pts, size_t& idx, float dt);
 
 #endif
