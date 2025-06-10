@@ -116,7 +116,9 @@ static GLuint buildProgram(const std::string& vsrc, const std::string& fsrc) {
 	return p;
 }
 
-// Converte faces com mais de 3 vertices em triangulos
+// Converte faces com mais de 3 vertices em triangulos.
+// OBJ permite polígonos de n lados, mas usamos glDrawArrays(GL_TRIANGLES),
+// então quebramos cada face usando um triângulo-fan a partir do primeiro vértice.
 static void triangulate(Mesh* mesh) {
 	for (Group* g : mesh->groups) {
 		std::vector<Face*> newFaces;
@@ -366,35 +368,51 @@ static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
 	if (pitch < -89.0f) pitch = -89.0f;
 }
 
-int main() {
-	if (!glfwInit()) { std::cerr << "Failed to init GLFW\n";return -1; }
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	GLFWwindow* win = glfwCreateWindow(800, 600, "OpenGL", nullptr, nullptr);
-	if (!win) { glfwTerminate();return -1; } glfwMakeContextCurrent(win);
-	glewExperimental = true; if (glewInit() != GLEW_OK) { std::cerr << "GLEW init failed\n";return -1; }
-	glEnable(GL_DEPTH_TEST);
-	glfwSetMouseButtonCallback(win, mouseButtonCallback);
-	glfwSetCursorPosCallback(win, cursorPosCallback);
+// Inicializa GLFW, cria janela e prepara GLEW. Retorna ponteiro para a janela.
+static GLFWwindow* initWindow(){
+        if (!glfwInit()) { std::cerr << "Failed to init GLFW\n";return nullptr; }
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+        GLFWwindow* win = glfwCreateWindow(800, 600, "OpenGL", nullptr, nullptr);
+        if (!win) { glfwTerminate();return nullptr; }
+        glfwMakeContextCurrent(win);
+        glewExperimental = true;
+        if (glewInit() != GLEW_OK) {
+                std::cerr << "GLEW init failed\n";
+                glfwTerminate();
+                return nullptr;
+        }
+        glEnable(GL_DEPTH_TEST);
+        glfwSetMouseButtonCallback(win, mouseButtonCallback);
+        glfwSetCursorPosCallback(win, cursorPosCallback);
+        return win;
+}
 
-	const char* vsrc = "#version 330 core\n"
-		"layout(location=0) in vec3 aPos;\n"
-		"layout(location=1) in vec3 aNormal;\n"
-		"layout(location=2) in vec2 aTex;\n"
-		"out vec3 FragPos;\n"
-		"out vec3 Normal;\n"
-		"out vec2 TexCoord;\n"
-		"uniform mat4 model;\n"
-		"uniform mat4 view;\n"
-		"uniform mat4 projection;\n"
-		"void main(){\n"
-		"FragPos = vec3(model*vec4(aPos,1.0));\n"
-		"Normal = mat3(transpose(inverse(model)))*aNormal;\n"
-		"TexCoord=aTex;\n"
-		"gl_Position = projection*view*vec4(FragPos,1.0);\n"
-		"}";
+// Cria e compila o par de shaders usados na aplicação. Mantemos os códigos
+// fonte (vsrc e fsrc) diretamente no arquivo para facilitar a distribuição.
+// O vertex shader calcula a posição final do vértice e passa normais/UVs.
+// O fragment shader implementa o modelo Phong completo com três luzes
+// pontuais, uma luz direcional e efeito de fog opcional.
+static GLuint createShaderProgram(){
+        const char* vsrc = "#version 330 core\n"
+                "layout(location=0) in vec3 aPos;\n"
+                "layout(location=1) in vec3 aNormal;\n"
+                "layout(location=2) in vec2 aTex;\n"
+                "out vec3 FragPos;\n"
+                "out vec3 Normal;\n"
+                "out vec2 TexCoord;\n"
+                "uniform mat4 model;\n"
+                "uniform mat4 view;\n"
+                "uniform mat4 projection;\n"
+                "void main(){\n"
+                "FragPos = vec3(model*vec4(aPos,1.0));\n"
+                "Normal = mat3(transpose(inverse(model)))*aNormal;\n"
+                "TexCoord=aTex;\n"
+                "gl_Position = projection*view*vec4(FragPos,1.0);\n"
+                "}";
 
+        // Fragment shader inclui três luzes pontuais, uma direcional e fog.
         const char* fsrc = "#version 330 core\n"
                 "struct Material{ sampler2D diffuse; vec3 ambient; vec3 diffuseColor; vec3 specular; float shininess; int useTexture; };\n"
                 "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
@@ -441,258 +459,276 @@ int main() {
                 "FragColor = vec4(result, 1.0);\n"
                 "}";
 
-        GLuint program = buildProgram(vsrc, fsrc);
+        return buildProgram(vsrc, fsrc);
+}
+
+struct UniformLocations {
+    GLint modelLoc;
+    GLint viewLoc;
+    GLint projLoc;
+    GLint lightPosLoc[3];
+    GLint lightColorLoc[3];
+    GLint lightConstLoc[3];
+    GLint lightLinLoc[3];
+    GLint lightQuadLoc[3];
+    GLint dirLightDirLoc;
+    GLint dirLightColorLoc;
+    GLint viewPosLoc;
+    GLint fogColorLoc;
+    GLint fogDensityLoc;
+    GLint matDiffuseLoc;
+    GLint matAmbientLoc;
+    GLint matDiffuseColorLoc;
+    GLint matSpecularLoc;
+    GLint matShineLoc;
+    GLint matUseTexLoc;
+};
+
+static UniformLocations getUniformLocations(GLuint program){
+    UniformLocations loc{};
+    loc.modelLoc = glGetUniformLocation(program, "model");
+    loc.viewLoc = glGetUniformLocation(program, "view");
+    loc.projLoc = glGetUniformLocation(program, "projection");
+    for(int i=0;i<3;++i){
+        std::string base = "lights[" + std::to_string(i) + "]";
+        loc.lightPosLoc[i] = glGetUniformLocation(program, (base+".position").c_str());
+        loc.lightColorLoc[i] = glGetUniformLocation(program, (base+".color").c_str());
+        loc.lightConstLoc[i] = glGetUniformLocation(program, (base+".constant").c_str());
+        loc.lightLinLoc[i] = glGetUniformLocation(program, (base+".linear").c_str());
+        loc.lightQuadLoc[i] = glGetUniformLocation(program, (base+".quadratic").c_str());
+    }
+    loc.dirLightDirLoc = glGetUniformLocation(program, "dirLight.direction");
+    loc.dirLightColorLoc = glGetUniformLocation(program, "dirLight.color");
+    loc.viewPosLoc = glGetUniformLocation(program, "viewPos");
+    loc.fogColorLoc = glGetUniformLocation(program, "fogColor");
+    loc.fogDensityLoc = glGetUniformLocation(program, "fogDensity");
+    loc.matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
+    loc.matAmbientLoc = glGetUniformLocation(program, "material.ambient");
+    loc.matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
+    loc.matSpecularLoc = glGetUniformLocation(program, "material.specular");
+    loc.matShineLoc = glGetUniformLocation(program, "material.shininess");
+    loc.matUseTexLoc = glGetUniformLocation(program, "material.useTexture");
+    return loc;
+}
+
+// Gera VAO/VBO para desenhar opcionalmente a curva
+static void createCurveBuffers(const std::vector<glm::vec3>& points, GLuint& vao, GLuint& vbo){
+    vao = vbo = 0;
+    if(points.empty()) return;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, points.size()*sizeof(glm::vec3), points.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(glm::vec3),(void*)0);
+    glVertexAttrib3f(1,0.0f,1.0f,0.0f);
+    glVertexAttrib2f(2,0.0f,0.0f);
+    glBindVertexArray(0);
+}
+
+static void setupInitialLights(const UniformLocations& loc, const glm::vec3 lightPositions[3]){
+    const glm::vec3 lightColors[3] = { glm::vec3(1.0f), glm::vec3(1.0f), glm::vec3(1.0f) };
+    for(int i=0;i<3;++i){
+        glUniform3fv(loc.lightPosLoc[i],1,glm::value_ptr(lightPositions[i]));
+        glUniform3fv(loc.lightColorLoc[i],1,glm::value_ptr(lightColors[i]));
+        glUniform1f(loc.lightConstLoc[i],1.0f);
+        glUniform1f(loc.lightLinLoc[i],0.045f);
+        glUniform1f(loc.lightQuadLoc[i],0.0075f);
+    }
+    glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f,-1.0f,-0.3f));
+    glm::vec3 sunColor(0.4f,0.45f,0.5f);
+    setupDirectionalLight(loc.dirLightDirLoc, loc.dirLightColorLoc, sunDir, sunColor);
+    glUniform3f(loc.fogColorLoc,0.6f,0.6f,0.65f);
+    glUniform1f(loc.fogDensityLoc,0.05f);
+    glUniform1i(loc.matDiffuseLoc,0);
+}
+
+// Retorna o tempo decorrido desde a última chamada
+static float deltaTime(float& last){
+    float now = (float)glfwGetTime();
+    float dt = now - last;
+    last = now;
+    return dt;
+}
+
+// Alterna entre câmera livre e câmera que persegue o carro (tecla O)
+static void handleCameraToggle(GLFWwindow* win, bool& cameraSwitched){
+    bool oDown = glfwGetKey(win, GLFW_KEY_O) == GLFW_PRESS;
+    if(oDown && !oPressed){
+        freeCamera = !freeCamera;
+        oPressed = true;
+        rotating = false;      // para rotação com o mouse
+        cameraSwitched = true;
+    }
+    if(!oDown) oPressed = false;
+    if(!freeCamera && cameraSwitched){
+        orbitYaw = 0.0f;
+        orbitPitch = 0.0f;
+        cameraSwitched = false;
+    }
+}
+
+// Tratamento das teclas F e R para debug da curva
+static void handleCurveKeys(GLFWwindow* win, bool& showCurve, bool& fPressed, size_t& pathIdx){
+    if(glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS && !fPressed){
+        showCurve = !showCurve;
+        fPressed = true;
+    }
+    if(glfwGetKey(win, GLFW_KEY_F) == GLFW_RELEASE)
+        fPressed = false;
+    if(glfwGetKey(win, GLFW_KEY_R) == GLFW_PRESS)
+        pathIdx = 0;
+}
+
+// Atualiza posição e orientação da câmera
+static glm::vec3 updateCamera(GLFWwindow* win, const glm::vec3& carPos, const glm::vec3& carFront, float dt){
+    glm::vec3 front;
+    if(!freeCamera){
+        const float orbitSpeed = 90.0f;
+        if(glfwGetKey(win,GLFW_KEY_W)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_UP)==GLFW_PRESS) orbitPitch += orbitSpeed*dt;
+        if(glfwGetKey(win,GLFW_KEY_S)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_DOWN)==GLFW_PRESS) orbitPitch -= orbitSpeed*dt;
+        if(glfwGetKey(win,GLFW_KEY_A)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_LEFT)==GLFW_PRESS) orbitYaw += orbitSpeed*dt;
+        if(glfwGetKey(win,GLFW_KEY_D)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_RIGHT)==GLFW_PRESS) orbitYaw -= orbitSpeed*dt;
+        orbitPitch = glm::clamp(orbitPitch,-89.0f,89.0f);
+        glm::vec3 baseDir = -carFront;
+        glm::mat4 rotYaw = glm::rotate(glm::mat4(1.0f), glm::radians(orbitYaw), glm::vec3(0,1,0));
+        glm::vec3 dir = glm::vec3(rotYaw * glm::vec4(baseDir,0.0f));
+        glm::vec3 rightAxis = glm::normalize(glm::cross(dir, glm::vec3(0,1,0)));
+        glm::mat4 rotPitch = glm::rotate(glm::mat4(1.0f), glm::radians(orbitPitch), rightAxis);
+        dir = glm::normalize(glm::vec3(rotPitch * glm::vec4(dir,0.0f)));
+        camPos = carPos + dir * chaseDistance + glm::vec3(0, chaseHeight, 0);
+        front = glm::normalize(carPos - camPos);
+        yaw = glm::degrees(atan2(front.z, front.x));
+        pitch = glm::degrees(asin(front.y));
+    }else{
+        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        front.y = sin(glm::radians(pitch));
+        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        front = glm::normalize(front);
+        glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0,1,0)));
+        if(glfwGetKey(win,GLFW_KEY_W)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_UP)==GLFW_PRESS) camPos += front * dt * 5.0f;
+        if(glfwGetKey(win,GLFW_KEY_S)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_DOWN)==GLFW_PRESS) camPos -= front * dt * 5.0f;
+        if(glfwGetKey(win,GLFW_KEY_A)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_LEFT)==GLFW_PRESS) camPos -= right * dt * 5.0f;
+        if(glfwGetKey(win,GLFW_KEY_D)==GLFW_PRESS || glfwGetKey(win,GLFW_KEY_RIGHT)==GLFW_PRESS) camPos += right * dt * 5.0f;
+    }
+    return front;
+}
+
+// Atualiza posicao das luzes que orbitam o carro
+static void updateLightPositions(const glm::vec3& carPos, glm::vec3 lightPositions[3], float dt){
+    lightOrbitAngle -= lightOrbitSpeed * dt; // sentido horario
+    for(int i=0;i<3;++i){
+        float ang = lightOrbitAngle + i * 2.0f * 3.14159265f / 3.0f;
+        lightPositions[i] = carPos + glm::vec3(cos(ang)*lightOrbitRadius, lightOrbitHeight, sin(ang)*lightOrbitRadius);
+    }
+}
+
+// Envia view/projection e posicoes das luzes para o shader
+static void sendFrameUniforms(const UniformLocations& loc, const glm::mat4& view,
+                              const glm::mat4& proj, const glm::vec3& cam,
+                              const glm::vec3 lightPositions[3]){
+    glUniformMatrix4fv(loc.viewLoc,1,GL_FALSE,glm::value_ptr(view));
+    glUniformMatrix4fv(loc.projLoc,1,GL_FALSE,glm::value_ptr(proj));
+    glUniform3fv(loc.viewPosLoc,1,glm::value_ptr(cam));
+    for(int i=0;i<3;++i)
+        glUniform3fv(loc.lightPosLoc[i],1,glm::value_ptr(lightPositions[i]));
+}
+
+// Desenha todos os objetos da cena
+static void renderObjects(const std::vector<Obj3D>& scene, const UniformLocations& loc){
+    for(const Obj3D& obj : scene){
+        glUniformMatrix4fv(loc.modelLoc,1,GL_FALSE,glm::value_ptr(obj.transform));
+        for(Group* g : obj.mesh->groups){
+            auto it = obj.materials.find(g->material);
+            MaterialInfo mat; if(it != obj.materials.end()) mat = it->second;
+            glUniform3fv(loc.matAmbientLoc,1,glm::value_ptr(mat.Ka));
+            glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(mat.Kd));
+            glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(mat.Ks));
+            glUniform1f(loc.matShineLoc, mat.Ns);
+            glUniform1i(loc.matUseTexLoc, mat.texture ? 1 : 0);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, mat.texture);
+            glBindVertexArray(g->vao);
+            glDrawArrays(GL_TRIANGLES,0,g->numVertices);
+        }
+    }
+}
+
+// Opcionalmente desenha a linha da curva usada na animacao
+static void renderCurve(GLuint vao, const std::vector<glm::vec3>& points, const UniformLocations& loc, bool enabled){
+    if(!enabled || vao==0) return;
+    MaterialInfo dbg; dbg.Ka = glm::vec3(1,0,0); dbg.Kd = dbg.Ka; dbg.Ks = glm::vec3(0); dbg.Ns = 1.0f; dbg.texture = 0;
+    glUniformMatrix4fv(loc.modelLoc,1,GL_FALSE,glm::value_ptr(glm::mat4(1.0f)));
+    glUniform3fv(loc.matAmbientLoc,1,glm::value_ptr(dbg.Ka));
+    glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(dbg.Kd));
+    glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(dbg.Ks));
+    glUniform1f(loc.matShineLoc, dbg.Ns);
+    glUniform1i(loc.matUseTexLoc,0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D,0);
+    glBindVertexArray(vao);
+    glDrawArrays(GL_LINE_STRIP,0,(GLsizei)points.size());
+}
+
+// Loop principal organizado em chamadas menores
+static void run(GLFWwindow* win, GLuint program, std::vector<Obj3D>& scene,
+                const std::vector<glm::vec3>& curvePoints, GLuint curveVAO,
+                const UniformLocations& loc){
+    size_t carIndex = scene.size() > 1 ? 1 : 0;
+    size_t pathIndex = 0;
+    bool showCurve = false;
+    bool fPressed = false;
+    float last = (float)glfwGetTime();
+    glm::vec3 lightPositions[3] = { glm::vec3(0.0f) };
+    if(!curvePoints.empty()){
+        lightPositions[0] = curvePoints[0] + glm::vec3(0,5,0);
+        lightPositions[1] = curvePoints[curvePoints.size()/2] + glm::vec3(0,5,0);
+        lightPositions[2] = curvePoints.back() + glm::vec3(0,5,0);
+    }
+    setupInitialLights(loc, lightPositions);
+
+    while(!glfwWindowShouldClose(win)){
+        float dt = deltaTime(last);
+        bool camSwitched = false;
+        handleCameraToggle(win, camSwitched);
+        handleCurveKeys(win, showCurve, fPressed, pathIndex);
+        if(carIndex < scene.size())
+            animateCarAlongCurve(scene[carIndex], curvePoints, pathIndex, dt);
+        glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
+        glm::vec3 carFront = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(0,0,-1,0)));
+        glm::vec3 front = updateCamera(win, carPos, carFront, dt);
+        updateLightPositions(carPos, lightPositions, dt);
+        if(glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(win,1);
+        glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0,1,0));
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), 800.0f/600.0f, 0.1f, 100.0f);
+
+        glClearColor(0.2f,0.2f,0.2f,1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(program);
+        sendFrameUniforms(loc, view, proj, camPos, lightPositions);
+        renderObjects(scene, loc);
+        renderCurve(curveVAO, curvePoints, loc, showCurve);
+        glBindVertexArray(0);
+        glfwSwapBuffers(win);
+        glfwPollEvents();
+    }
+}
 
-        //Leitura do arquivo de cena 
-        SceneConfig cfg{};
-        if(!loadSceneConfig("scene.txt", cfg))
-                return -1;
-
-        std::string curveFile = cfg.curveFile;
-        if(curveFile.empty()) {
-                std::cerr << "No curve file specified in scene.txt\n";
-                return -1;
-        }
-        if(cfg.objFiles.empty()) {
-                std::cerr << "No OBJ files listed in scene.txt\n";
-                return -1;
-        }
-
-        // Carrega pontos da curva da animacao
-        std::vector<glm::vec3> curvePoints;
-        loadCurve(curveFile, curvePoints);
-
-        glm::vec3 lightPositions[3] = { glm::vec3(0.0f) };
-        if(!curvePoints.empty()){
-                lightPositions[0] = curvePoints[0] + glm::vec3(0,5,0);
-                lightPositions[1] = curvePoints[curvePoints.size()/2] + glm::vec3(0,5,0);
-                lightPositions[2] = curvePoints.back() + glm::vec3(0,5,0);
-        }
-
-        // VAO/VBO para opcionalmente desenhar a curva
-        GLuint curveVAO = 0, curveVBO = 0;
-        if (!curvePoints.empty()) {
-                glGenVertexArrays(1, &curveVAO);
-                glGenBuffers(1, &curveVBO);
-                glBindVertexArray(curveVAO); // seleciona buffer da curva
-                glBindBuffer(GL_ARRAY_BUFFER, curveVBO);
-                glBufferData(GL_ARRAY_BUFFER, curvePoints.size() * sizeof(glm::vec3), curvePoints.data(), GL_STATIC_DRAW);
-                glEnableVertexAttribArray(0);
-                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
-                glVertexAttrib3f(1, 0.0f, 1.0f, 0.0f); // normal constante
-                glVertexAttrib2f(2, 0.0f, 0.0f);       // texcoord nulo
-                glBindVertexArray(0);        // volta ao VAO padrão
-        }
-
-        // Carrega modelos e materiais especificados no arquivo de cena
-        std::vector<Obj3D> scene = loadSceneObjects(cfg.objFiles);
-
-        // indices de objetos relevantes
-        size_t carIndex = scene.size() > 1 ? 1 : 0; // assume que o primeiro OBJ eh a pista
-        size_t pathIndex = 0;           // ponto atual da curva
-        bool showCurve = false;
-        bool fPressed = false;
-
-	GLint modelLoc = glGetUniformLocation(program, "model");
-	GLint viewLoc = glGetUniformLocation(program, "view");
-	GLint projLoc = glGetUniformLocation(program, "projection");
-        // Locais de uniformes para cada luz pontual (Phong: ambiente/difusa/especular)
-        GLint lightPosLoc[3];    // posicao
-        GLint lightColorLoc[3];  // cor
-        GLint lightConstLoc[3];  // atenuacao constante
-        GLint lightLinLoc[3];    // atenuacao linear
-        GLint lightQuadLoc[3];   // atenuacao quadratica
-        for(int i=0;i<3;++i){
-                std::string base = "lights[" + std::to_string(i) + "]";
-                lightPosLoc[i] = glGetUniformLocation(program, (base+".position").c_str());
-                lightColorLoc[i] = glGetUniformLocation(program, (base+".color").c_str());
-                lightConstLoc[i] = glGetUniformLocation(program, (base+".constant").c_str());
-                lightLinLoc[i] = glGetUniformLocation(program, (base+".linear").c_str());
-                lightQuadLoc[i] = glGetUniformLocation(program, (base+".quadratic").c_str());
-        }
-        // Uniformes relacionados à luz direcional (ex.: o "sol" da cena)
-        GLint dirLightDirLoc = glGetUniformLocation(program, "dirLight.direction");
-        GLint dirLightColorLoc = glGetUniformLocation(program, "dirLight.color");
-
-        // Posicao do observador para calculo do termo especular
-        GLint viewPosLoc = glGetUniformLocation(program, "viewPos");
-        // Parametros do efeito de neblina (fog)
-        GLint fogColorLoc = glGetUniformLocation(program, "fogColor");
-        GLint fogDensityLoc = glGetUniformLocation(program, "fogDensity");
-
-        // Uniformes do material aplicado (Phong + texturas)
-        GLint matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
-        GLint matAmbientLoc = glGetUniformLocation(program, "material.ambient");
-        GLint matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
-        GLint matSpecularLoc = glGetUniformLocation(program, "material.specular");
-        GLint matShineLoc = glGetUniformLocation(program, "material.shininess");
-        GLint matUseTexLoc = glGetUniformLocation(program, "material.useTexture");
-
-        // luzes orbitais neutras para realcar as cores originais dos materiais
-        const glm::vec3 lightColors[3] = {
-                glm::vec3(1.0f),
-                glm::vec3(1.0f),
-                glm::vec3(1.0f)
-        };
-        for(int i=0;i<3;++i){
-                glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));   // posição das luzes
-                glUniform3fv(lightColorLoc[i], 1, glm::value_ptr(lightColors[i]));    // cor das luzes
-                glUniform1f(lightConstLoc[i], 1.0f);                // atenuação constante
-                glUniform1f(lightLinLoc[i], 0.045f);                // atenuação linear
-                glUniform1f(lightQuadLoc[i], 0.0075f);              // atenuação quadrática
-        }
-        // luz direcional principal (sol)
-        glm::vec3 sunDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.3f));
-        glm::vec3 sunColor(0.4f, 0.45f, 0.5f); // luz difusa azulada
-        setupDirectionalLight(dirLightDirLoc, dirLightColorLoc, sunDir, sunColor);
-        // cor do nevoeiro levemente mais clara para nao distorcer tons
-        glUniform3f(fogColorLoc, 0.6f, 0.6f, 0.65f); // cor do fog
-        glUniform1f(fogDensityLoc, 0.05f);         // densidade da neblina
-        glUniform1i(matDiffuseLoc, 0);
-
-        // posicao da camera e orientacao sao definidas globalmente
-        float lastTime = (float)glfwGetTime();
-
-        while (!glfwWindowShouldClose(win)) {
-                float time = (float)glfwGetTime();
-                float dt = time - lastTime; lastTime = time;
-
-                bool oDown = glfwGetKey(win, GLFW_KEY_O) == GLFW_PRESS;
-                static bool cameraSwitched = false;
-                if (oDown && !oPressed) {
-                        freeCamera = !freeCamera;
-                        oPressed = true;
-                        rotating = false;
-                        cameraSwitched = true;
-                }
-                if (!oDown) oPressed = false;
-                if (!freeCamera && cameraSwitched) {
-                        orbitYaw = 0.0f;
-                        orbitPitch = 0.0f;
-                        cameraSwitched = false;
-                }
-
-
-                // tecla F alterna a visualizacao da curva de debug
-                if (glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS && !fPressed) { showCurve = !showCurve; fPressed = true; }
-                if (glfwGetKey(win, GLFW_KEY_F) == GLFW_RELEASE) fPressed = false;
-                // tecla R reinicia a animacao do carro
-                if (glfwGetKey(win, GLFW_KEY_R) == GLFW_PRESS) pathIndex = 0;
-
-                // Atualiza a transformacao do carro a cada frame com velocidade reduzida
-                if (carIndex < scene.size())
-                        animateCarAlongCurve(scene[carIndex], curvePoints, pathIndex, dt);
-
-                glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
-                glm::vec3 carFront = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(0, 0, -1, 0)));
-
-                if (!freeCamera) {
-                        const float orbitSpeed = 90.0f;
-                        if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS)
-                                orbitPitch += orbitSpeed * dt;
-                        if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS)
-                                orbitPitch -= orbitSpeed * dt;
-                        if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS)
-                                orbitYaw += orbitSpeed * dt;
-                        if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS)
-                                orbitYaw -= orbitSpeed * dt;
-                        orbitPitch = glm::clamp(orbitPitch, -89.0f, 89.0f);
-
-                        glm::vec3 baseDir = -carFront;
-                        glm::mat4 rotYaw = glm::rotate(glm::mat4(1.0f), glm::radians(orbitYaw), glm::vec3(0,1,0));
-                        glm::vec3 dir = glm::vec3(rotYaw * glm::vec4(baseDir, 0.0f));
-                        glm::vec3 rightAxis = glm::normalize(glm::cross(dir, glm::vec3(0,1,0)));
-                        glm::mat4 rotPitch = glm::rotate(glm::mat4(1.0f), glm::radians(orbitPitch), rightAxis);
-                        dir = glm::normalize(glm::vec3(rotPitch * glm::vec4(dir, 0.0f)));
-
-                        camPos = carPos + dir * chaseDistance + glm::vec3(0, chaseHeight, 0);
-                }
-
-                glm::vec3 front;
-                if (freeCamera) {
-                        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-                        front.y = sin(glm::radians(pitch));
-                        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-                        front = glm::normalize(front);
-                } else {
-                        front = glm::normalize(carPos - camPos);
-                        yaw = glm::degrees(atan2(front.z, front.x));
-                        pitch = glm::degrees(asin(front.y));
-                }
-
-                glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0, 1, 0)));
-
-                if (freeCamera) {
-                        if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS)
-                                camPos += front * dt * 5.0f;
-                        if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS)
-                                camPos -= front * dt * 5.0f;
-                        if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS)
-                                camPos -= right * dt * 5.0f;
-                        if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS)
-                                camPos += right * dt * 5.0f;
-                }
-                if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(win, 1);
-
-                glm::mat4 view = glm::lookAt(camPos, camPos + front, glm::vec3(0, 1, 0));
-                glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
-
-                lightOrbitAngle -= lightOrbitSpeed * dt; // sentido horario
-                for(int i=0;i<3;++i){
-                        float ang = lightOrbitAngle + i * 2.0f * 3.14159265f / 3.0f;
-                        lightPositions[i] = carPos + glm::vec3(cos(ang) * lightOrbitRadius,
-                                                             lightOrbitHeight,
-                                                             sin(ang) * lightOrbitRadius);
-                }
-
-
-		glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glUseProgram(program);
-                glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));         // matriz view
-                glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));   // matriz projection
-                glUniform3fv(viewPosLoc, 1, glm::value_ptr(camPos));     // posição da câmera
-                for(int i=0;i<3;++i)
-                        glUniform3fv(lightPosLoc[i], 1, glm::value_ptr(lightPositions[i]));
-
-                for (const Obj3D& obj : scene) {
-                        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(obj.transform));       // matriz model
-                        for (Group* g : obj.mesh->groups) {
-                                auto it = obj.materials.find(g->material);
-                                MaterialInfo mat;
-                                if (it != obj.materials.end()) mat = it->second;
-                                glUniform3fv(matAmbientLoc, 1, glm::value_ptr(mat.Ka));          // Ka
-                                glUniform3fv(matDiffuseColorLoc, 1, glm::value_ptr(mat.Kd));     // Kd
-                                glUniform3fv(matSpecularLoc, 1, glm::value_ptr(mat.Ks));         // Ks
-                                glUniform1f(matShineLoc, mat.Ns);
-                                glUniform1i(matUseTexLoc, mat.texture ? 1 : 0);
-                                glActiveTexture(GL_TEXTURE0);
-                                glBindTexture(GL_TEXTURE_2D, mat.texture);         // texturização difusa
-                                glBindVertexArray(g->vao);      // geometria da malha
-                                glDrawArrays(GL_TRIANGLES, 0, g->numVertices);   // envia para rasterização
-                        }
-                }
-                // Desenha a linha da curva para depuracao se habilitado
-                if (showCurve && curveVAO) {
-                        MaterialInfo dbg; dbg.Ka = glm::vec3(1.0f, 0.0f, 0.0f); dbg.Kd = dbg.Ka; dbg.Ks = glm::vec3(0.0f); dbg.Ns = 1.0f; dbg.texture = 0;
-                        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
-                        glUniform3fv(matAmbientLoc, 1, glm::value_ptr(dbg.Ka));
-                        glUniform3fv(matDiffuseColorLoc, 1, glm::value_ptr(dbg.Kd));
-                        glUniform3fv(matSpecularLoc, 1, glm::value_ptr(dbg.Ks));
-                        glUniform1f(matShineLoc, dbg.Ns);
-                        glUniform1i(matUseTexLoc, 0);
-                        glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, 0);                          // sem textura
-                        glBindVertexArray(curveVAO);
-                        glDrawArrays(GL_LINE_STRIP, 0, (GLsizei)curvePoints.size());
-                }
-                glBindVertexArray(0);
-
-		glfwSwapBuffers(win);
-		glfwPollEvents();
-	}
-
-	glfwTerminate();
-	return 0;
+int main(){
+    GLFWwindow* win = initWindow();
+    if(!win) return -1;
+    GLuint program = createShaderProgram();
+    glUseProgram(program);
+    SceneConfig cfg{};
+    if(!loadSceneConfig("scene.txt", cfg)) return -1;
+    if(cfg.curveFile.empty() || cfg.objFiles.empty()) return -1;
+    std::vector<glm::vec3> curvePoints; loadCurve(cfg.curveFile, curvePoints);
+    GLuint curveVAO=0, curveVBO=0; createCurveBuffers(curvePoints, curveVAO, curveVBO);
+    std::vector<Obj3D> scene = loadSceneObjects(cfg.objFiles);
+    UniformLocations loc = getUniformLocations(program);
+    run(win, program, scene, curvePoints, curveVAO, loc);
+    glfwTerminate();
+    return 0;
 }
