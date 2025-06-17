@@ -18,9 +18,10 @@
 // Inicializa GLFW, cria janela e prepara GLEW. Retorna ponteiro para a janela.
 static GLFWwindow* initWindow(){
     if (!glfwInit()) { std::cerr << "Failed to init GLFW\n";return nullptr; }
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    // Requesting a specific OpenGL version causes the program to fail on
+    // systems that only support older contexts. By omitting these hints we
+    // allow GLFW to create the highest version available on the user's
+    // machine, falling back to legacy profiles when necessary.
     GLFWwindow* win = glfwCreateWindow(800, 600, "OpenGL", nullptr, nullptr);
     if (!win) { glfwTerminate();return nullptr; }
     glfwMakeContextCurrent(win);
