@@ -18,9 +18,10 @@
 // Inicializa GLFW, cria janela e prepara GLEW. Retorna ponteiro para a janela.
 static GLFWwindow* initWindow(){
     if (!glfwInit()) { std::cerr << "Failed to init GLFW\n";return nullptr; }
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    // Requesting a specific OpenGL version causes the program to fail on
+    // systems that only support older contexts. By omitting these hints we
+    // allow GLFW to create the highest version available on the user's
+    // machine, falling back to legacy profiles when necessary.
     GLFWwindow* win = glfwCreateWindow(800, 600, "OpenGL", nullptr, nullptr);
     if (!win) { glfwTerminate();return nullptr; }
     glfwMakeContextCurrent(win);
@@ -40,6 +41,8 @@ static GLFWwindow* initWindow(){
 static void renderObjects(const std::vector<Obj3D>& scene, const UniformLocations& loc){
     for(const Obj3D& obj : scene){
         glUniformMatrix4fv(loc.modelLoc,1,GL_FALSE,glm::value_ptr(obj.transform));
+        glm::mat3 nmat = glm::transpose(glm::inverse(glm::mat3(obj.transform)));
+        glUniformMatrix3fv(loc.normalLoc,1,GL_FALSE,glm::value_ptr(nmat));
         for(Group* g : obj.mesh->groups){
             auto it = obj.materials.find(g->material);
             MaterialInfo mat; if(it != obj.materials.end()) mat = it->second;
@@ -65,6 +68,7 @@ static void renderCurve(GLuint vao, const std::vector<glm::vec3>& points, const 
     if(!enabled || vao==0) return;
     MaterialInfo dbg; dbg.Ka = glm::vec3(1,0,0); dbg.Kd = dbg.Ka; dbg.Ks = glm::vec3(0); dbg.Ns = 1.0f; dbg.texture = 0;
     glUniformMatrix4fv(loc.modelLoc,1,GL_FALSE,glm::value_ptr(glm::mat4(1.0f)));
+    glUniformMatrix3fv(loc.normalLoc,1,GL_FALSE,glm::value_ptr(glm::mat3(1.0f)));
     glUniform3fv(loc.matAmbientLoc,1,glm::value_ptr(dbg.Ka));
     glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(dbg.Kd));
     glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(dbg.Ks));

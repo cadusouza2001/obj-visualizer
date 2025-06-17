@@ -47,12 +47,21 @@ static GLuint compileShader(GLenum type, const std::string& src) {
     return s;
 }
 
-static GLuint buildProgram(const std::string& vsrc, const std::string& fsrc) {
+// Compila e linka um programa de shaders.
+// Quando 'bindAttribs' for verdadeiro, associa os nomes dos atributos aos
+// índices 0,1,2 antes do link. Necessário para GLSL mais antigo.
+static GLuint buildProgram(const std::string& vsrc, const std::string& fsrc,
+                           bool bindAttribs) {
     GLuint vs = compileShader(GL_VERTEX_SHADER, vsrc);
     GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsrc);
     GLuint p = glCreateProgram();
     glAttachShader(p, vs);
     glAttachShader(p, fs);
+    if (bindAttribs) {
+        glBindAttribLocation(p, 0, "aPos");
+        glBindAttribLocation(p, 1, "aNormal");
+        glBindAttribLocation(p, 2, "aTex");
+    }
     glLinkProgram(p);
     GLint ok;
     glGetProgramiv(p, GL_LINK_STATUS, &ok);
@@ -69,76 +78,166 @@ static GLuint buildProgram(const std::string& vsrc, const std::string& fsrc) {
 // Cria e compila o par de shaders usados na aplicação.
 // Mantemos os códigos fonte diretamente aqui para facilitar a distribuição.
 GLuint createShaderProgram(){
-    const char* vsrc = "#version 330 core\n"
-        "layout(location=0) in vec3 aPos;\n"
-        "layout(location=1) in vec3 aNormal;\n"
-        "layout(location=2) in vec2 aTex;\n"
-        "out vec3 FragPos;\n"
-        "out vec3 Normal;\n"
-        "out vec2 TexCoord;\n"
-        "uniform mat4 model;\n"
-        "uniform mat4 view;\n"
-        "uniform mat4 projection;\n"
-        "void main(){\n"
-        "FragPos = vec3(model*vec4(aPos,1.0));\n"
-        "Normal = mat3(transpose(inverse(model)))*aNormal;\n"
-        "TexCoord=aTex;\n"
-        "gl_Position = projection*view*vec4(FragPos,1.0);\n"
-        "}";
+    int maj = 0, min = 0;
+    const char* ver = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
+    if (ver) sscanf(ver, "%d.%d", &maj, &min);
+    bool modern = (maj * 100 + min) >= 330;
 
-    const char* fsrc = "#version 330 core\n"
-        "struct Material{ sampler2D diffuse; vec3 ambient; vec3 diffuseColor; vec3 specular; float shininess; int useTexture; };\n"
-        "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
-        "struct DirLight{ vec3 direction; vec3 color; };\n"
-        "in vec3 FragPos;\n"
-        "in vec3 Normal;\n"
-        "in vec2 TexCoord;\n"
-        "out vec4 FragColor;\n"
-        "uniform Material material;\n"
-        "uniform Light lights[3];\n"
-        "uniform DirLight dirLight;\n"
-        "uniform vec3 viewPos;\n"
-        "uniform vec3 fogColor;\n"
-        "uniform float fogDensity;\n"
-        "uniform float fogStart;\n"
-        "void main(){\n"
-        "vec3 norm = normalize(Normal);\n"
-        "vec3 viewDir = normalize(viewPos - FragPos);\n"
-        "vec3 texCol = material.useTexture == 1 ? texture(material.diffuse, TexCoord).rgb : vec3(1.0);\n"
-        "vec3 baseColor = material.diffuseColor * texCol;\n"
-        "vec3 ambient = material.ambient * texCol;\n"
-        "vec3 result = ambient;\n"
-        "for(int i=0;i<3;++i){\n"
-        "  vec3 lightDir = normalize(lights[i].position - FragPos);\n"
-        "  float diff = max(dot(norm, lightDir), 0.0);\n"
-        "  vec3 diffuse = diff * baseColor;\n"
-        "  vec3 reflectDir = reflect(-lightDir, norm);\n"
-        "  float spec = pow(max(dot(viewDir, reflectDir),0.0), material.shininess);\n"
-        "  vec3 specular = material.specular * spec;\n"
-        "  float d = length(lights[i].position - FragPos);\n"
-        "  float att = 1.0 / (lights[i].constant + lights[i].linear*d + lights[i].quadratic*d*d);\n"
-        "  result += (diffuse + specular) * lights[i].color * att;\n"
-        "}\n"
-        "vec3 sunDir = normalize(-dirLight.direction);\n"
-        "float diffSun = max(dot(norm, sunDir), 0.0);\n"
-        "vec3 diffuseSun = diffSun * baseColor;\n"
-        "vec3 reflectSun = reflect(-sunDir, norm);\n"
-        "float specSun = pow(max(dot(viewDir, reflectSun),0.0), material.shininess);\n"
-        "vec3 specularSun = material.specular * specSun;\n"
-        "result += (diffuseSun + specularSun) * dirLight.color;\n"
-        "float dist = length(viewPos - FragPos) - fogStart;\n"
-        "float fogFactor = exp(-fogDensity*max(dist,0.0));\n"
-        "fogFactor = clamp(fogFactor,0.0,1.0);\n"
-        "result = mix(fogColor, result, fogFactor);\n"
-        "FragColor = vec4(result, 1.0);\n"
-        "}";
+    std::string vsrc;
+    std::string fsrc;
 
-    return buildProgram(vsrc, fsrc);
+    if (modern) {
+        vsrc =
+            "#version 330 core\n"
+            "layout(location=0) in vec3 aPos;\n"
+            "layout(location=1) in vec3 aNormal;\n"
+            "layout(location=2) in vec2 aTex;\n"
+            "out vec3 FragPos;\n"
+            "out vec3 Normal;\n"
+            "out vec2 TexCoord;\n"
+            "uniform mat4 model;\n"
+            "uniform mat4 view;\n"
+            "uniform mat4 projection;\n"
+            "uniform mat3 normalMatrix;\n"
+            "void main(){\n"
+            "FragPos = vec3(model*vec4(aPos,1.0));\n"
+            "Normal = normalMatrix * aNormal;\n"
+            "TexCoord=aTex;\n"
+            "gl_Position = projection*view*vec4(FragPos,1.0);\n"
+            "}";
+
+        fsrc =
+            "#version 330 core\n"
+            "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
+            "struct DirLight{ vec3 direction; vec3 color; };\n"
+            "in vec3 FragPos;\n"
+            "in vec3 Normal;\n"
+            "in vec2 TexCoord;\n"
+            "out vec4 FragColor;\n"
+            "uniform Light lights[3];\n"
+            "uniform DirLight dirLight;\n"
+            "uniform vec3 viewPos;\n"
+            "uniform vec3 fogColor;\n"
+            "uniform float fogDensity;\n"
+            "uniform float fogStart;\n"
+            "uniform sampler2D diffuseTex;\n"
+            "uniform vec3 matAmbient;\n"
+            "uniform vec3 matDiffuseColor;\n"
+            "uniform vec3 matSpecular;\n"
+            "uniform float matShininess;\n"
+            "uniform int matUseTexture;\n"
+            "void main(){\n"
+            "vec3 norm = normalize(Normal);\n"
+            "vec3 viewDir = normalize(viewPos - FragPos);\n"
+            "vec3 texCol = matUseTexture == 1 ? texture(diffuseTex, TexCoord).rgb : vec3(1.0);\n"
+            "vec3 baseColor = matDiffuseColor * texCol;\n"
+            "vec3 ambient = matAmbient * texCol;\n"
+            "vec3 result = ambient;\n"
+            "for(int i=0;i<3;++i){\n"
+            "  vec3 lightDir = normalize(lights[i].position - FragPos);\n"
+            "  float diff = max(dot(norm, lightDir), 0.0);\n"
+            "  vec3 diffuse = diff * baseColor;\n"
+            "  vec3 reflectDir = reflect(-lightDir, norm);\n"
+            "  float spec = pow(max(dot(viewDir, reflectDir),0.0), matShininess);\n"
+            "  vec3 specular = matSpecular * spec;\n"
+            "  float d = length(lights[i].position - FragPos);\n"
+            "  float att = 1.0 / (lights[i].constant + lights[i].linear*d + lights[i].quadratic*d*d);\n"
+            "  result += (diffuse + specular) * lights[i].color * att;\n"
+            "}\n"
+            "vec3 sunDir = normalize(-dirLight.direction);\n"
+            "float diffSun = max(dot(norm, sunDir), 0.0);\n"
+            "vec3 diffuseSun = diffSun * baseColor;\n"
+            "vec3 reflectSun = reflect(-sunDir, norm);\n"
+            "float specSun = pow(max(dot(viewDir, reflectSun),0.0), matShininess);\n"
+            "vec3 specularSun = matSpecular * specSun;\n"
+            "result += (diffuseSun + specularSun) * dirLight.color;\n"
+            "float dist = length(viewPos - FragPos) - fogStart;\n"
+            "float fogFactor = exp(-fogDensity*max(dist,0.0));\n"
+            "fogFactor = clamp(fogFactor,0.0,1.0);\n"
+            "result = mix(fogColor, result, fogFactor);\n"
+            "FragColor = vec4(result, 1.0);\n"
+            "}";
+
+        return buildProgram(vsrc, fsrc, false);
+    } else {
+        vsrc =
+            "#version 120\n"
+            "attribute vec3 aPos;\n"
+            "attribute vec3 aNormal;\n"
+            "attribute vec2 aTex;\n"
+            "varying vec3 FragPos;\n"
+            "varying vec3 Normal;\n"
+            "varying vec2 TexCoord;\n"
+            "uniform mat4 model;\n"
+            "uniform mat4 view;\n"
+            "uniform mat4 projection;\n"
+            "uniform mat3 normalMatrix;\n"
+            "void main(){\n"
+            "FragPos = vec3(model*vec4(aPos,1.0));\n"
+            "Normal = normalMatrix * aNormal;\n"
+            "TexCoord=aTex;\n"
+            "gl_Position = projection*view*vec4(FragPos,1.0);\n"
+            "}";
+
+        fsrc =
+            "#version 120\n"
+            "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
+            "struct DirLight{ vec3 direction; vec3 color; };\n"
+            "varying vec3 FragPos;\n"
+            "varying vec3 Normal;\n"
+            "varying vec2 TexCoord;\n"
+            "uniform Light lights[3];\n"
+            "uniform DirLight dirLight;\n"
+            "uniform vec3 viewPos;\n"
+            "uniform vec3 fogColor;\n"
+            "uniform float fogDensity;\n"
+            "uniform float fogStart;\n"
+            "uniform sampler2D diffuseTex;\n"
+            "uniform vec3 matAmbient;\n"
+            "uniform vec3 matDiffuseColor;\n"
+            "uniform vec3 matSpecular;\n"
+            "uniform float matShininess;\n"
+            "uniform int matUseTexture;\n"
+            "void main(){\n"
+            "vec3 norm = normalize(Normal);\n"
+            "vec3 viewDir = normalize(viewPos - FragPos);\n"
+            "vec3 texCol = matUseTexture == 1 ? texture2D(diffuseTex, TexCoord).rgb : vec3(1.0);\n"
+            "vec3 baseColor = matDiffuseColor * texCol;\n"
+            "vec3 ambient = matAmbient * texCol;\n"
+            "vec3 result = ambient;\n"
+            "for(int i=0;i<3;++i){\n"
+            "  vec3 lightDir = normalize(lights[i].position - FragPos);\n"
+            "  float diff = max(dot(norm, lightDir), 0.0);\n"
+            "  vec3 diffuse = diff * baseColor;\n"
+            "  vec3 reflectDir = reflect(-lightDir, norm);\n"
+            "  float spec = pow(max(dot(viewDir, reflectDir),0.0), matShininess);\n"
+            "  vec3 specular = matSpecular * spec;\n"
+            "  float d = length(lights[i].position - FragPos);\n"
+            "  float att = 1.0 / (lights[i].constant + lights[i].linear*d + lights[i].quadratic*d*d);\n"
+            "  result += (diffuse + specular) * lights[i].color * att;\n"
+            "}\n"
+            "vec3 sunDir = normalize(-dirLight.direction);\n"
+            "float diffSun = max(dot(norm, sunDir), 0.0);\n"
+            "vec3 diffuseSun = diffSun * baseColor;\n"
+            "vec3 reflectSun = reflect(-sunDir, norm);\n"
+            "float specSun = pow(max(dot(viewDir, reflectSun),0.0), matShininess);\n"
+            "vec3 specularSun = matSpecular * specSun;\n"
+            "result += (diffuseSun + specularSun) * dirLight.color;\n"
+            "float dist = length(viewPos - FragPos) - fogStart;\n"
+            "float fogFactor = exp(-fogDensity*max(dist,0.0));\n"
+            "fogFactor = clamp(fogFactor,0.0,1.0);\n"
+            "result = mix(fogColor, result, fogFactor);\n"
+            "gl_FragColor = vec4(result, 1.0);\n"
+            "}";
+
+        return buildProgram(vsrc, fsrc, true);
+    }
 }
 
 UniformLocations getUniformLocations(GLuint program){
     UniformLocations loc{};
     loc.modelLoc = glGetUniformLocation(program, "model");
+    loc.normalLoc = glGetUniformLocation(program, "normalMatrix");
     loc.viewLoc = glGetUniformLocation(program, "view");
     loc.projLoc = glGetUniformLocation(program, "projection");
     for(int i=0;i<3;++i){
@@ -155,12 +254,12 @@ UniformLocations getUniformLocations(GLuint program){
     loc.fogColorLoc = glGetUniformLocation(program, "fogColor");
     loc.fogDensityLoc = glGetUniformLocation(program, "fogDensity");
     loc.fogStartLoc = glGetUniformLocation(program, "fogStart");
-    loc.matDiffuseLoc = glGetUniformLocation(program, "material.diffuse");
-    loc.matAmbientLoc = glGetUniformLocation(program, "material.ambient");
-    loc.matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
-    loc.matSpecularLoc = glGetUniformLocation(program, "material.specular");
-    loc.matShineLoc = glGetUniformLocation(program, "material.shininess");
-    loc.matUseTexLoc = glGetUniformLocation(program, "material.useTexture");
+    loc.matDiffuseLoc = glGetUniformLocation(program, "diffuseTex");
+    loc.matAmbientLoc = glGetUniformLocation(program, "matAmbient");
+    loc.matDiffuseColorLoc = glGetUniformLocation(program, "matDiffuseColor");
+    loc.matSpecularLoc = glGetUniformLocation(program, "matSpecular");
+    loc.matShineLoc = glGetUniformLocation(program, "matShininess");
+    loc.matUseTexLoc = glGetUniformLocation(program, "matUseTexture");
     return loc;
 }
 

@@ -11,6 +11,7 @@ extern const glm::vec3 clearColor;
 
 struct UniformLocations {
     GLint modelLoc;
+    GLint normalLoc;
     GLint viewLoc;
     GLint projLoc;
     GLint lightPosLoc[3];
@@ -24,7 +25,7 @@ struct UniformLocations {
     GLint fogColorLoc;
     GLint fogDensityLoc;
     GLint fogStartLoc;
-    GLint matDiffuseLoc;
+    GLint matDiffuseLoc; // sampler2D
     GLint matAmbientLoc;
     GLint matDiffuseColorLoc;
     GLint matSpecularLoc;
