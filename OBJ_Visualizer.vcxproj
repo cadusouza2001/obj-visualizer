@@ -131,6 +131,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="CameraControls.h" />
+    <ClInclude Include="CarControls.h" />
     <ClInclude Include="Face.h" />
     <ClInclude Include="Group.h" />
     <ClInclude Include="LightControls.h" />
@@ -142,6 +143,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CameraControls.cpp" />
+    <ClCompile Include="CarControls.cpp" />
     <ClCompile Include="Face.cpp" />
     <ClCompile Include="Group.cpp" />
     <ClCompile Include="LightControls.cpp" />

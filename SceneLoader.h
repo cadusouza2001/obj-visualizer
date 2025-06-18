@@ -52,5 +52,6 @@ std::vector<Obj3D> loadSceneObjects(const std::vector<std::string>& paths);
 
 void handleCurveKeys(GLFWwindow* win, bool& showCurve, bool& fPressed, size_t& pathIdx);
 void animateCarAlongCurve(Obj3D& car, const std::vector<glm::vec3>& pts, size_t& idx, float dt);
+void resetCarAnimation();
 
 #endif

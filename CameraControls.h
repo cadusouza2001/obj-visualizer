@@ -17,5 +17,7 @@ void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 void handleCameraToggle(GLFWwindow* win, bool& cameraSwitched);
 float deltaTime(float& last);
 glm::vec3 updateCamera(GLFWwindow* win, const glm::vec3& carPos, const glm::vec3& carFront, float dt);
+void forceChaseCamera();
+bool isFreeCamera();
 
 #endif

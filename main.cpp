@@ -14,6 +14,7 @@
 #include "CameraControls.h"
 #include "LightControls.h"
 #include "WireframeControls.h"
+#include "CarControls.h"
 
 // Inicializa GLFW, cria janela e prepara GLEW. Retorna ponteiro para a janela.
 static GLFWwindow* initWindow(){
@@ -98,10 +99,15 @@ static void run(GLFWwindow* win, GLuint program, std::vector<Obj3D>& scene,
         bool camSwitched = false;
         handleCameraToggle(win, camSwitched);
         handleCurveKeys(win, showCurve, fPressed, pathIndex);
+        handleDriveToggle(win, scene[carIndex], curvePoints, pathIndex);
         handleLightingKeys(win);                // processa teclas de iluminacao
         handleWireframeToggle(win);             // alterna modo wireframe
-        if(carIndex < scene.size())
-            animateCarAlongCurve(scene[carIndex], curvePoints, pathIndex, dt);
+        if(carIndex < scene.size()){
+            if(manualDriving)
+                updateManualDrive(win, scene[carIndex], dt);
+            else
+                animateCarAlongCurve(scene[carIndex], curvePoints, pathIndex, dt);
+        }
         glm::vec3 carPos = glm::vec3(scene[carIndex].transform[3]);
         glm::vec3 carFront = glm::normalize(glm::vec3(scene[carIndex].transform * glm::vec4(0,0,-1,0)));
         glm::vec3 front = updateCamera(win, carPos, carFront, dt);

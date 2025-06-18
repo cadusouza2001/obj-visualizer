@@ -181,7 +181,8 @@ std::vector<Obj3D> loadSceneObjects(const std::vector<std::string>& paths) {
     return objs;
 }
 
-static float carAngleOffset = glm::radians(-90.0f);
+static const float carAngleOffset = glm::radians(-90.0f);
+float carAnimationT = 0.0f;
 
 void handleCurveKeys(GLFWwindow* win, bool& showCurve, bool& fPressed, size_t& pathIdx){
     if(glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS && !fPressed){
@@ -196,19 +197,22 @@ void handleCurveKeys(GLFWwindow* win, bool& showCurve, bool& fPressed, size_t& p
 
 void animateCarAlongCurve(Obj3D& car, const std::vector<glm::vec3>& pts, size_t& idx, float dt){
     if (pts.size() < 2) return;
-    static float segT = 0.0f;
     const float speed = 15.0f;
-    segT += dt * speed;
-    while (segT >= 1.0f) {
-        segT -= 1.0f;
+    carAnimationT += dt * speed;
+    while (carAnimationT >= 1.0f) {
+        carAnimationT -= 1.0f;
         idx = (idx + 1) % pts.size();
     }
     size_t next = (idx + 1) % pts.size();
-    glm::vec3 pos = glm::mix(pts[idx], pts[next], segT);
+    glm::vec3 pos = glm::mix(pts[idx], pts[next], carAnimationT);
     glm::vec3 dir = glm::normalize(pts[next] - pts[idx]);
     float pathAngle = atan2(dir.z, dir.x);
     glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
     model = glm::rotate(model, - pathAngle + carAngleOffset, glm::vec3(0, 1, 0));
     car.transform = model;
+}
+
+void resetCarAnimation(){
+    carAnimationT = 0.0f;
 }
 

@@ -55,6 +55,8 @@ Projeto universitário de Computação Gráfica. Este aplicativo carrega modelos
 - `D / →`: mover para direita
 - **Mouse (botão esquerdo)**: rotaciona a câmera
 - `O`: alterna entre câmera livre e câmera que segue o carro
+- `P`: ativa direção manual com **WASD** e câmera atrás do carro (pressione
+  novamente para retornar ao percurso padrão)
 - `F`: mostra/oculta a curva de animação
 - `R`: reinicia o percurso do carro
 - `T`: alterna a visualização wireframe (GL_LINE/GL_FILL)
