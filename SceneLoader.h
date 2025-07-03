@@ -19,6 +19,7 @@ struct MaterialInfo {
     glm::vec3 Ks{1.0f};   // componente especular
     float Ns{32.0f};      // expoente de brilho (shininess)
     GLuint texture{0};    // textura difusa
+    float alpha{1.0f};    // transparencia (1.0 = opaco)
 };
 
 // Estrutura que representa um objeto na cena

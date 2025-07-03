@@ -29,6 +29,7 @@ struct UniformLocations {
     GLint matDiffuseColorLoc;
     GLint matSpecularLoc;
     GLint matShineLoc;
+    GLint matAlphaLoc;
     GLint matUseTexLoc;
 };
 

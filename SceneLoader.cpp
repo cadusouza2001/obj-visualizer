@@ -133,6 +133,7 @@ void loadMTL(const std::string& filename, std::map<std::string, MaterialInfo>& m
         else if (p == "Kd" && cur) { iss >> cur->Kd.r >> cur->Kd.g >> cur->Kd.b; }
         else if (p == "Ks" && cur) { iss >> cur->Ks.r >> cur->Ks.g >> cur->Ks.b; }
         else if (p == "Ns" && cur) { iss >> cur->Ns; }
+        else if (p == "d" && cur) { iss >> cur->alpha; }
         else if (p == "map_Kd" && cur) { std::string tex; iss >> tex; cur->texture = loadTexture(dir + tex); }
     }
 }

@@ -87,7 +87,7 @@ GLuint createShaderProgram(){
         "}";
 
     const char* fsrc = "#version 330 core\n"
-        "struct Material{ sampler2D diffuse; vec3 ambient; vec3 diffuseColor; vec3 specular; float shininess; int useTexture; };\n"
+        "struct Material{ sampler2D diffuse; vec3 ambient; vec3 diffuseColor; vec3 specular; float shininess; float alpha; int useTexture; };\n"
         "struct Light{ vec3 position; vec3 color; float constant; float linear; float quadratic; };\n"
         "struct DirLight{ vec3 direction; vec3 color; };\n"
         "in vec3 FragPos;\n"
@@ -130,7 +130,7 @@ GLuint createShaderProgram(){
         "float fogFactor = exp(-fogDensity*max(dist,0.0));\n"
         "fogFactor = clamp(fogFactor,0.0,1.0);\n"
         "result = mix(fogColor, result, fogFactor);\n"
-        "FragColor = vec4(result, 1.0);\n"
+        "FragColor = vec4(result, material.alpha);\n"
         "}";
 
     return buildProgram(vsrc, fsrc);
@@ -160,6 +160,7 @@ UniformLocations getUniformLocations(GLuint program){
     loc.matDiffuseColorLoc = glGetUniformLocation(program, "material.diffuseColor");
     loc.matSpecularLoc = glGetUniformLocation(program, "material.specular");
     loc.matShineLoc = glGetUniformLocation(program, "material.shininess");
+    loc.matAlphaLoc = glGetUniformLocation(program, "material.alpha");
     loc.matUseTexLoc = glGetUniformLocation(program, "material.useTexture");
     return loc;
 }

@@ -32,6 +32,8 @@ static GLFWwindow* initWindow(){
         return nullptr;
     }
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glfwSetMouseButtonCallback(win, mouseButtonCallback);
     glfwSetCursorPosCallback(win, cursorPosCallback);
     return win;
@@ -39,12 +41,13 @@ static GLFWwindow* initWindow(){
 
 // Desenha todos os objetos da cena
 static void renderObjects(const std::vector<Obj3D>& scene, const UniformLocations& loc){
+    // Primeiro desenha materiais opacos
     for(const Obj3D& obj : scene){
         glUniformMatrix4fv(loc.modelLoc,1,GL_FALSE,glm::value_ptr(obj.transform));
         for(Group* g : obj.mesh->groups){
             auto it = obj.materials.find(g->material);
             MaterialInfo mat; if(it != obj.materials.end()) mat = it->second;
-            // Envia componentes Ka/Kd/Ks considerando se estao habilitados
+            if(mat.alpha < 1.0f) continue;
             glm::vec3 Ka = ambientEnabled  ? mat.Ka : glm::vec3(0.0f);
             glm::vec3 Kd = diffuseEnabled  ? mat.Kd : glm::vec3(0.0f);
             glm::vec3 Ks = specularEnabled ? mat.Ks : glm::vec3(0.0f);
@@ -52,6 +55,29 @@ static void renderObjects(const std::vector<Obj3D>& scene, const UniformLocation
             glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(Kd));
             glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(Ks));
             glUniform1f(loc.matShineLoc, mat.Ns);
+            glUniform1f(loc.matAlphaLoc, mat.alpha);
+            glUniform1i(loc.matUseTexLoc, mat.texture ? 1 : 0);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, mat.texture);
+            glBindVertexArray(g->vao);
+            glDrawArrays(GL_TRIANGLES,0,g->numVertices);
+        }
+    }
+    // Depois, desenha objetos transparentes
+    for(const Obj3D& obj : scene){
+        glUniformMatrix4fv(loc.modelLoc,1,GL_FALSE,glm::value_ptr(obj.transform));
+        for(Group* g : obj.mesh->groups){
+            auto it = obj.materials.find(g->material);
+            MaterialInfo mat; if(it != obj.materials.end()) mat = it->second;
+            if(mat.alpha >= 1.0f) continue;
+            glm::vec3 Ka = ambientEnabled  ? mat.Ka : glm::vec3(0.0f);
+            glm::vec3 Kd = diffuseEnabled  ? mat.Kd : glm::vec3(0.0f);
+            glm::vec3 Ks = specularEnabled ? mat.Ks : glm::vec3(0.0f);
+            glUniform3fv(loc.matAmbientLoc,1,glm::value_ptr(Ka));
+            glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(Kd));
+            glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(Ks));
+            glUniform1f(loc.matShineLoc, mat.Ns);
+            glUniform1f(loc.matAlphaLoc, mat.alpha);
             glUniform1i(loc.matUseTexLoc, mat.texture ? 1 : 0);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, mat.texture);
@@ -64,12 +90,13 @@ static void renderObjects(const std::vector<Obj3D>& scene, const UniformLocation
 // Opcionalmente desenha a linha da curva usada na animacao
 static void renderCurve(GLuint vao, const std::vector<glm::vec3>& points, const UniformLocations& loc, bool enabled){
     if(!enabled || vao==0) return;
-    MaterialInfo dbg; dbg.Ka = glm::vec3(1,0,0); dbg.Kd = dbg.Ka; dbg.Ks = glm::vec3(0); dbg.Ns = 1.0f; dbg.texture = 0;
+    MaterialInfo dbg; dbg.Ka = glm::vec3(1,0,0); dbg.Kd = dbg.Ka; dbg.Ks = glm::vec3(0); dbg.Ns = 1.0f; dbg.texture = 0; dbg.alpha = 1.0f;
     glUniformMatrix4fv(loc.modelLoc,1,GL_FALSE,glm::value_ptr(glm::mat4(1.0f)));
     glUniform3fv(loc.matAmbientLoc,1,glm::value_ptr(dbg.Ka));
     glUniform3fv(loc.matDiffuseColorLoc,1,glm::value_ptr(dbg.Kd));
     glUniform3fv(loc.matSpecularLoc,1,glm::value_ptr(dbg.Ks));
     glUniform1f(loc.matShineLoc, dbg.Ns);
+    glUniform1f(loc.matAlphaLoc, dbg.alpha);
     glUniform1i(loc.matUseTexLoc,0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D,0);
