@@ -14,7 +14,8 @@ static double lastX = 0.0, lastY = 0.0;    // ultima posicao do mouse
 static bool freeCamera = false;            // false: camera segue o carro
 static bool oPressed = false;              // controle da tecla O
 static const float chaseDistance = 7.0f;   // dist. da camera atras do carro
-static const float chaseHeight = 2.0f;     // altura da camera em relacao ao carro
+static const float chaseHeight  = 2.0f;    // altura da camera em relacao ao carro
+static const float inCarHeight  = 0.325f;    // altura da camera dentro do carro
 static float orbitYaw = 0.0f;              // angulo horizontal ao orbitar o carro
 static float orbitPitch = 0.0f;            // angulo vertical ao orbitar o carro
 
@@ -90,7 +91,10 @@ glm::vec3 updateCamera(GLFWwindow* win, const glm::vec3& carPos, const glm::vec3
     glm::vec3 front;
     if(!freeCamera){
         if(manualDriving){
-            camPos = carPos - carFront * chaseDistance + glm::vec3(0, chaseHeight, 0);
+            // Coloca a camera dentro do carro quando o usuario esta dirigindo
+            glm::vec3 forward = glm::normalize(carFront); // direção do carro
+            glm::vec3 offset = - 0.19f * forward;
+            camPos = carPos + offset + glm::vec3(0.0f, inCarHeight, 0.0f); // adiciona a altura
             front = glm::normalize(carFront);
             yaw = glm::degrees(atan2(front.z, front.x));
             pitch = glm::degrees(asin(front.y));

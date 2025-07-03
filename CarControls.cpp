@@ -6,7 +6,7 @@
 bool manualDriving = false;
 
 static bool pPressed = false;
-static glm::vec3 drivePos(0.0f);
+static glm::vec3 drivePos(10.0f);
 static float driveYaw = 0.0f;
 
 static const float moveSpeed = 15.0f;
